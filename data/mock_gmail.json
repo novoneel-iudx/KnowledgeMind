@@ -1,0 +1,34 @@
+[
+  {
+    "from": "priya@example.com",
+    "subject": "Re: Project Atlas review prep",
+    "snippet": "Can we move our 1:1 to 4pm today? I want to walk through the Atlas numbers before the design review.",
+    "date": "2026-06-22T08:45:00",
+    "unread": true,
+    "external_id": "gmail-001"
+  },
+  {
+    "from": "arjun@example.com",
+    "subject": "Design review agenda",
+    "snippet": "Draft agenda attached for Tuesday's Atlas design review. Please add your sections by EOD Monday.",
+    "date": "2026-06-21T17:20:00",
+    "unread": true,
+    "external_id": "gmail-002"
+  },
+  {
+    "from": "no-reply@citydental.example.com",
+    "subject": "Appointment reminder",
+    "snippet": "This is a reminder of your dental appointment on Wednesday 24 June at 9:30 AM.",
+    "date": "2026-06-20T07:00:00",
+    "unread": false,
+    "external_id": "gmail-003"
+  },
+  {
+    "from": "lena@example.com",
+    "subject": "Lunch Thursday?",
+    "snippet": "Are you free for lunch on Thursday around 12:30? Thinking Cafe Verde.",
+    "date": "2026-06-19T11:05:00",
+    "unread": false,
+    "external_id": "gmail-004"
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "summary": "Team standup",
+    "start": "2026-06-22T10:00:00",
+    "end": "2026-06-22T10:30:00",
+    "attendees": ["priya@example.com", "arjun@example.com"],
+    "location": "Zoom",
+    "source": "calendar",
+    "commitment_type": "HARD",
+    "external_id": "cal-evt-001"
+  },
+  {
+    "summary": "1:1 with Priya",
+    "start": "2026-06-22T16:00:00",
+    "end": "2026-06-22T16:45:00",
+    "attendees": ["priya@example.com"],
+    "location": "Meeting Room 3",
+    "source": "calendar",
+    "commitment_type": "HARD",
+    "external_id": "cal-evt-002"
+  },
+  {
+    "summary": "Project Atlas design review",
+    "start": "2026-06-23T14:00:00",
+    "end": "2026-06-23T15:30:00",
+    "attendees": ["arjun@example.com", "lena@example.com"],
+    "location": "Zoom",
+    "source": "calendar",
+    "commitment_type": "HARD",
+    "external_id": "cal-evt-003"
+  },
+  {
+    "summary": "Dentist appointment",
+    "start": "2026-06-24T09:30:00",
+    "end": "2026-06-24T10:15:00",
+    "attendees": [],
+    "location": "City Dental Clinic",
+    "source": "calendar",
+    "commitment_type": "HARD",
+    "external_id": "cal-evt-004"
+  },
+  {
+    "summary": "Lunch with Lena",
+    "start": "2026-06-25T12:30:00",
+    "end": "2026-06-25T13:30:00",
+    "attendees": ["lena@example.com"],
+    "location": "Cafe Verde",
+    "source": "calendar",
+    "commitment_type": "SOFT",
+    "external_id": "cal-evt-005"
+  }
+]

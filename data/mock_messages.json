@@ -1,0 +1,42 @@
+[
+  {
+    "source": "slack",
+    "channel_id": "C-PROJECT-ATLAS",
+    "sender": "Priya",
+    "text": "Hey, can we sync about the Atlas numbers? See you at 4 today.",
+    "timestamp": "2026-06-22T08:40:00",
+    "external_id": "slack-ts-001"
+  },
+  {
+    "source": "slack",
+    "channel_id": "C-PROJECT-ATLAS",
+    "sender": "Arjun",
+    "text": "I'll have the design review agenda ready by EOD Monday.",
+    "timestamp": "2026-06-21T16:55:00",
+    "external_id": "slack-ts-002"
+  },
+  {
+    "source": "slack",
+    "channel_id": "C-GENERAL",
+    "sender": "Lena",
+    "text": "Lunch Thursday around 12:30 at Cafe Verde? Lmk!",
+    "timestamp": "2026-06-19T11:02:00",
+    "external_id": "slack-ts-003"
+  },
+  {
+    "source": "slack",
+    "channel_id": "C-GENERAL",
+    "sender": "Arjun",
+    "text": "lol that meme was great",
+    "timestamp": "2026-06-19T13:10:00",
+    "external_id": "slack-ts-004"
+  },
+  {
+    "source": "slack",
+    "channel_id": "C-PROJECT-ATLAS",
+    "sender": "Priya",
+    "text": "Maybe we grab coffee sometime next week to brainstorm?",
+    "timestamp": "2026-06-20T10:30:00",
+    "external_id": "slack-ts-005"
+  }
+]
