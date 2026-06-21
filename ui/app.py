@@ -385,6 +385,11 @@ def run_monitor_cycle() -> tuple[str, str]:
     return get_monitor_state(), get_monitor_status()
 
 
+def refresh_monitor_view() -> tuple[str, str]:
+    """Display-only refresh (used by the auto-refresh timer): no new poll."""
+    return get_monitor_state(), get_monitor_status()
+
+
 # ---------------------------------------------------------------------------
 # Reset
 # ---------------------------------------------------------------------------
@@ -590,17 +595,19 @@ def build_main_ui(cfg: AppConfig) -> gr.Blocks:
                 gr.Markdown("Live view of your personal knowledge graph. Auto-refreshes every 60s.")
                 with gr.Row():
                     refresh_kg_btn = gr.Button("Refresh Graph", variant="secondary")
-                kg_html = gr.HTML(value="<p style='color:#888'>Click Refresh to load graph.</p>")
+                kg_html = gr.HTML(value="<p style='color:#888'>Loading graph…</p>")
+                kg_timer = gr.Timer(60)  # auto-refresh every 60s
 
             # ── Tab 3: Monitor ─────────────────────────────────────────────
             with gr.TabItem("📡 Monitor"):
-                gr.Markdown("Background monitor status and proactive conflict alerts.")
+                gr.Markdown("Background monitor status and proactive conflict alerts. Auto-refreshes every 15s.")
                 monitor_state_md = gr.Markdown(value=get_monitor_state())
                 with gr.Row():
                     run_poll_btn = gr.Button("Run poll now", variant="primary")
                     refresh_monitor_btn = gr.Button("Refresh Alerts", variant="secondary")
                 gr.Markdown("### Alerts")
                 monitor_output = gr.Markdown(value=get_monitor_status())
+                monitor_timer = gr.Timer(15)  # auto-refresh every 15s
 
             # ── Tab 4: Documents ───────────────────────────────────────────
             with gr.TabItem("📄 Documents"):
@@ -674,6 +681,14 @@ def build_main_ui(cfg: AppConfig) -> gr.Blocks:
         refresh_kg_btn.click(render_kg, outputs=kg_html)
         run_poll_btn.click(run_monitor_cycle, outputs=[monitor_state_md, monitor_output])
         refresh_monitor_btn.click(get_monitor_status, outputs=monitor_output)
+
+        # Auto-refresh timers (display-only; do not trigger a monitor poll).
+        kg_timer.tick(render_kg, outputs=kg_html)
+        monitor_timer.tick(refresh_monitor_view, outputs=[monitor_state_md, monitor_output])
+
+        # Initial render of the KG on page load (timer only fires after 60s).
+        demo.load(render_kg, outputs=kg_html)
+        demo.load(refresh_monitor_view, outputs=[monitor_state_md, monitor_output])
 
         # The send-confirmation gate: the sole caller of Gmail send.
         email_send_btn.click(
