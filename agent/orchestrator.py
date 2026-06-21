@@ -32,6 +32,7 @@ from agent.prompts import (
     CRITIC_SYSTEM_PROMPT,
     DIRECT_ANSWER_PROMPT,
     REACT_THOUGHT_PROMPT,
+    L1_AGENT_PROMPT,
 )
 from agent.token_tracker import TokenTracker, TokenEvent
 from config.store import get_config
@@ -293,39 +294,71 @@ def _run_l1(
     routing_log: list[dict],
 ) -> str:
     """
-    Single LLM call with tools available in context.
-    Router decides local or cloud. No loop, no planning.
+    Augmented LLM: one decision call that either answers directly OR runs ONE
+    tool, whose result is then synthesised into the answer (SPEC 5.1). The router
+    decides local vs cloud; privacy-pinned tools keep their synthesis local so
+    personal results never reach the cloud.
     """
     agency_level = "L1"
     kg_context = _inject_kg_context(user_input)
 
-    # Decide routing for this single call
-    routing_result = router.route(user_input, tool_name=None)
+    # ── Decision call: answer directly or pick one tool ──────────────────────
+    decide_routing = router.route(user_input, tool_name=None)
+    decide_system = (
+        f"{L1_AGENT_PROMPT}\n\n"
+        f"Knowledge-graph context (the user's commitments):\n{kg_context}"
+    )
+    messages = history + [{"role": "user", "content": user_input}]
+    if decide_routing.decision == RoutingDecision.LOCAL:
+        decision_raw = _call_ollama(messages, decide_system, tracker, "single_call", agency_level)
+    else:
+        decision_raw = _call_groq(messages, decide_system, tracker, "single_call", agency_level, max_tokens=1000)
+
+    parsed = _extract_json(decision_raw)
+
+    # ── Direct answer (no tool) -- the lightweight 1-call path ───────────────
+    if not parsed or "tool" not in parsed:
+        routing_log.append({
+            "step_id": 1, "tool": "single_call",
+            "decision": decide_routing.decision.value,
+            "privacy_score": decide_routing.privacy_score,
+            "complexity_score": decide_routing.complexity_score,
+            "reason": decide_routing.reason,
+        })
+        if parsed and parsed.get("answer"):
+            return str(parsed["answer"]).strip()
+        return decision_raw.strip()
+
+    # ── One tool call, then synthesise ───────────────────────────────────────
+    tool_name = parsed.get("tool", "")
+    tool_input = parsed.get("input", user_input) or user_input
+    tool_routing = router.route(tool_input, tool_name=tool_name)
     routing_log.append({
-        "step_id": 1,
-        "tool": "single_call",
-        "decision": routing_result.decision.value,
-        "privacy_score": routing_result.privacy_score,
-        "complexity_score": routing_result.complexity_score,
-        "reason": routing_result.reason,
+        "step_id": 1, "tool": tool_name,
+        "decision": tool_routing.decision.value,
+        "privacy_score": tool_routing.privacy_score,
+        "complexity_score": tool_routing.complexity_score,
+        "reason": tool_routing.reason,
     })
 
-    system = f"""{DIRECT_ANSWER_PROMPT}
+    # Heuristic params keep L1 lean (no extra param-parse LLM call).
+    params = _heuristic_params(tool_name, tool_input)
+    result = _dispatch_tool(tool_name, params)
+    observation = result.get("formatted", result.get("output", json.dumps(result)[:600]))
 
-You have access to the user's personal knowledge graph. Here is relevant context:
-{kg_context}
-
-Answer the user's question directly. If you need to call a tool, call exactly one.
-Respond in plain text — no JSON wrapper needed for direct answers."""
-
-    messages = history + [{"role": "user", "content": user_input}]
-
-    if routing_result.decision == RoutingDecision.LOCAL:
-        answer = _call_ollama(messages, system, tracker, "single_call", agency_level)
+    synth_input = (
+        f"{user_input}\n\nResult from the {tool_name} tool:\n{observation}\n\n"
+        f"Answer the user using this result."
+    )
+    # Privacy: synthesise locally for LOCAL-routed (personal) tools so their
+    # results never reach the cloud; CLOUD-safe tools may synthesise on Groq.
+    if tool_routing.decision == RoutingDecision.LOCAL:
+        answer = _call_ollama([{"role": "user", "content": synth_input}],
+                              DIRECT_ANSWER_PROMPT, tracker, "single_call", agency_level)
     else:
-        answer = _call_groq(messages, system, tracker, "single_call", agency_level, max_tokens=1000)
-
-    return answer
+        answer = _call_groq([{"role": "user", "content": synth_input}],
+                            DIRECT_ANSWER_PROMPT, tracker, "single_call", agency_level, max_tokens=1000)
+    return answer.strip() or observation
 
 
 # ---------------------------------------------------------------------------
