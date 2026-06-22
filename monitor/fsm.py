@@ -323,17 +323,18 @@ if __name__ == "__main__":
         cfg.db_path = db_path
         cfg.alerts_log_path = alerts_path
 
-        # Seed a calendar commitment that the incoming Slack commitment collides with.
+        # Seed a calendar commitment the user OWNS ("(self)" -> person_id NULL),
+        # exactly as MockCalendarSource / insert_commitment stores it. The
+        # incoming Slack commitment is attributed to its sender ("Priya"), so the
+        # conflict is genuinely CROSS-bucket and only fires with person-agnostic
+        # detection (the fix).
         seed_conn = init_db(db_path)
         noon = datetime.combine(datetime.now().date(), datetime.min.time()).timestamp() + 12 * 3600
-        seed_conn.execute(
-            "INSERT INTO persons (id, name, created_at) VALUES (1, 'Priya', ?)", (time.time(),)
-        )
         seed_conn.execute(
             """INSERT INTO commitments
                (person_id, description, start_ts, end_ts, source, commitment_type,
                 confidence, created_at, updated_at)
-               VALUES (1, 'Team standup', ?, ?, 'calendar', 'HARD', 1.0, ?, ?)""",
+               VALUES (NULL, 'Team standup', ?, ?, 'calendar', 'HARD', 1.0, ?, ?)""",
             (noon, noon + 1800, time.time(), time.time()),
         )
         seed_conn.commit()

@@ -24,6 +24,7 @@ from typing import Any, Callable, Optional
 from config.store import get_config
 from connectors.base import RawMessage
 from extraction.prompts import EXTRACTION_SYSTEM_PROMPT, build_extraction_prompt
+from extraction.timeparse import resolve_timestamp
 from kg.schema import CommitmentNode
 
 
@@ -166,10 +167,22 @@ def extract_commitments(
     confidence = float(parsed.get("confidence", 0.0))
     commitment_type = classify_commitment_type(confidence)
 
+    # Resolve the commitment time. The few-shot model returns the time *words*
+    # ("at 4", "tomorrow") but does not do epoch arithmetic, so we resolve them
+    # deterministically against the message-receipt time (models compute epochs
+    # unreliably -- see extraction/timeparse.py). Precedence:
+    #   1. deterministic resolution of the model's time_expression,
+    #   2. the model's own normalized_ts if it supplied one,
+    #   3. the message receipt time (start_ts is NOT NULL in the schema).
+    time_expression = parsed.get("time_expression") or ""
+    resolved_ts = resolve_timestamp(time_expression, raw_message.timestamp)
     normalized_ts = parsed.get("normalized_ts")
-    # Fall back to the message timestamp when the model could not resolve an
-    # absolute time -- start_ts is NOT NULL in the schema, so it must be set.
-    start_ts = float(normalized_ts) if normalized_ts is not None else raw_message.timestamp
+    if resolved_ts is not None:
+        start_ts = resolved_ts
+    elif normalized_ts is not None:
+        start_ts = float(normalized_ts)
+    else:
+        start_ts = raw_message.timestamp
 
     person_name = ner_candidates[0][0] if (ner_candidates and ner_candidates[0][0]) else raw_message.sender
     commitment = CommitmentNode(
@@ -205,6 +218,8 @@ if __name__ == "__main__":
         text="See you at 4 today.", timestamp=1_750_000_000.0, external_id="ts-1",
     )
 
+    # time_expression "at 4" is resolved deterministically (resolver-first) and
+    # must WIN over the model's normalized_ts.
     def _stub_hard(_system: str, _user: str) -> str:
         return ('{"is_commitment": true, "confidence": 0.95, "time_expression": "at 4", '
                 '"normalized_ts": 1750009999.0, "commitment_type": "HARD"}')
@@ -213,9 +228,22 @@ if __name__ == "__main__":
     assert result is not None and len(result.commitments) == 1, "expected one commitment"
     commitment = result.commitments[0]
     assert commitment.commitment_type == "HARD" and commitment.person_name == "Priya"
-    assert commitment.start_ts == 1750009999.0
+    expected_ts = resolve_timestamp("at 4", message.timestamp)
+    assert expected_ts is not None and commitment.start_ts == expected_ts, "resolver should win"
+    assert commitment.start_ts != 1750009999.0, "normalized_ts must not override a resolvable expr"
+    from datetime import datetime as _dt
+    assert _dt.fromtimestamp(commitment.start_ts).hour == 16, "'at 4' should resolve to 16:00 (PM)"
     print(f"=> extracted {commitment.commitment_type} commitment for {commitment.person_name} "
-          f"(conf={commitment.confidence})")
+          f"(conf={commitment.confidence}); 'at 4' -> {_dt.fromtimestamp(commitment.start_ts):%H:%M}")
+
+    # Precedence #2: a vague expression (resolver -> None) uses normalized_ts.
+    def _stub_vague_with_ts(_system: str, _user: str) -> str:
+        return ('{"is_commitment": true, "confidence": 0.9, "time_expression": "next week", '
+                '"normalized_ts": 1750009999.0, "commitment_type": "HARD"}')
+
+    vague = extract_commitments(message, [], llm_caller=_stub_vague_with_ts)
+    assert vague.commitments[0].start_ts == 1750009999.0, "vague expr should fall back to normalized_ts"
+    print("=> vague time_expression falls back to model normalized_ts")
 
     def _stub_non(_system: str, _user: str) -> str:
         return '{"is_commitment": false, "confidence": 0.02, "time_expression": "", "normalized_ts": null, "commitment_type": "TENTATIVE"}'

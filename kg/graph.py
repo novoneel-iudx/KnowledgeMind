@@ -6,8 +6,11 @@ NetworkX graph builder and temporal conflict detection over the SQLite KG.
 The graph is rebuilt from SQLite on demand (per monitor cycle / UI refresh) and
 is never persisted -- SQLite is the source of truth. Conflict detection uses
 half-open intervals [start, end) and the rule from SPEC 4.4: two commitments
-conflict if they overlap >= 5 minutes AND share a person (or both are self,
-person_id IS NULL).
+conflict if they overlap >= 5 minutes on the user's personal timeline. Detection
+is person-AGNOSTIC -- every stored commitment (calendar events plus commitments
+extracted from the user's own messages) sits on that one timeline, so a Slack
+soft commitment attributed to its sender can conflict with a calendar event the
+user owns. TENTATIVE commitments (confidence < 0.60) never trigger conflicts.
 """
 
 from __future__ import annotations
@@ -146,23 +149,19 @@ def detect_new_conflicts(conn: sqlite3.Connection, new_commitment_id: int) -> li
     new_commitment = _load_commitment(conn, new_commitment_id)
     if new_commitment is None:
         return []
+    # Tentative commitments are too uncertain to alert on (SPEC 4.3).
+    if new_commitment.commitment_type == "TENTATIVE":
+        return []
 
-    new_row = conn.execute(
-        "SELECT person_id FROM commitments WHERE id = ?", (new_commitment_id,)
-    ).fetchone()
-    new_person_id = new_row["person_id"] if new_row else None
-
-    # Candidate commitments share the person (or both self) and are not self.
-    if new_person_id is None:
-        candidates = conn.execute(
-            "SELECT id FROM commitments WHERE person_id IS NULL AND id != ?",
-            (new_commitment_id,),
-        ).fetchall()
-    else:
-        candidates = conn.execute(
-            "SELECT id FROM commitments WHERE person_id = ? AND id != ?",
-            (new_person_id, new_commitment_id),
-        ).fetchall()
+    # Person-agnostic: compare against every other non-tentative commitment on
+    # the user's timeline, regardless of person attribution. (Bucketing by
+    # person_id previously made cross-channel self-vs-named conflicts -- the
+    # headline scenario -- impossible.) Same-real-event records across channels
+    # may surface here; cross-source event de-dup is future work, out of scope.
+    candidates = conn.execute(
+        "SELECT id FROM commitments WHERE id != ? AND commitment_type != 'TENTATIVE'",
+        (new_commitment_id,),
+    ).fetchall()
 
     found: list[ConflictEdge] = []
     now = time.time()
@@ -323,61 +322,69 @@ def insert_commitment(
 
 if __name__ == "__main__":
     import tempfile
+    from datetime import datetime, time as dtime, timedelta
     from pathlib import Path
 
     from kg.schema import init_db
 
     with tempfile.TemporaryDirectory() as tmp:
         conn = init_db(str(Path(tmp) / "graph.db"))
-        now = time.time()
 
-        conn.execute(
-            "INSERT INTO persons (id, name, created_at) VALUES (1, 'Priya', ?)", (now,)
-        )
-        # Two overlapping commitments for the same person -> should conflict.
-        conn.execute(
-            """INSERT INTO commitments
-               (id, person_id, description, start_ts, end_ts, source,
-                commitment_type, confidence, created_at, updated_at)
-               VALUES (1, 1, 'Team standup', ?, ?, 'calendar', 'HARD', 1.0, ?, ?)""",
-            (now + 3600, now + 5400, now, now),
-        )
-        conn.execute(
-            """INSERT INTO commitments
-               (id, person_id, description, start_ts, end_ts, source,
-                commitment_type, confidence, created_at, updated_at)
-               VALUES (2, 1, 'see you at 4', ?, ?, 'slack', 'SOFT', 0.7, ?, ?)""",
-            (now + 3900, now + 5700, now, now),
-        )
-        conn.commit()
+        # Use the REAL write path (insert_commitment) so person bucketing matches
+        # production: calendar events are the user's own ("(self)" -> person_id
+        # NULL); a Slack soft commitment is attributed to its sender ("Priya" ->
+        # a non-NULL person). The headline Scenario-0 conflict is therefore
+        # CROSS-bucket -- it only fires with person-agnostic detection.
+        tomorrow = datetime.now().date() + timedelta(days=1)
+        at_1600 = datetime.combine(tomorrow, dtime(16, 0)).timestamp()
+        at_1645 = datetime.combine(tomorrow, dtime(16, 45)).timestamp()
 
-        new_conflicts = detect_new_conflicts(conn, 2)
-        assert len(new_conflicts) == 1, f"expected 1 conflict, got {len(new_conflicts)}"
-        print(f"=> detected conflict, overlap={new_conflicts[0].overlap_minutes:.0f} min")
+        cal_id = insert_commitment(conn, CommitmentNode(
+            id=0, person_name="(self)", description="1:1 with Priya",
+            start_ts=at_1600, end_ts=at_1645, source="calendar",
+            commitment_type="HARD", confidence=1.0, raw_text="1:1 with Priya"),
+            external_id="cal-1")
+        slack_id = insert_commitment(conn, CommitmentNode(
+            id=0, person_name="Priya", description="see you at 4",
+            start_ts=at_1600, end_ts=None, source="slack",
+            commitment_type="SOFT", confidence=0.75, raw_text="see you at 4"),
+            external_id="slack-1")
 
-        graph = build_graph(conn)
-        print(f"=> graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
-        assert graph.number_of_nodes() == 3, "expected 1 person + 2 commitments"
+        # Confirm the two really are in different person buckets (the bug's root).
+        cal_pid = conn.execute("SELECT person_id FROM commitments WHERE id=?", (cal_id,)).fetchone()["person_id"]
+        slack_pid = conn.execute("SELECT person_id FROM commitments WHERE id=?", (slack_id,)).fetchone()["person_id"]
+        assert cal_pid is None and slack_pid is not None, "expected cross-bucket setup (self vs named)"
+
+        # THE FIX: a cross-channel, cross-person conflict must be detected.
+        new_conflicts = detect_new_conflicts(conn, slack_id)
+        assert len(new_conflicts) == 1, f"expected 1 cross-channel conflict, got {len(new_conflicts)}"
+        print(f"=> cross-channel conflict detected (self calendar vs Priya slack), "
+              f"overlap={new_conflicts[0].overlap_minutes:.0f} min")
+
+        # TENTATIVE commitments must NOT trigger conflicts (README / SPEC 4.3).
+        tentative_id = insert_commitment(conn, CommitmentNode(
+            id=0, person_name="(self)", description="maybe gym", start_ts=at_1600,
+            end_ts=at_1645, source="slack", commitment_type="TENTATIVE",
+            confidence=0.4, raw_text="maybe gym at 4?"), external_id="slack-2")
+        assert detect_new_conflicts(conn, tentative_id) == [], "TENTATIVE must not raise conflicts"
+        print("=> TENTATIVE commitment correctly skipped (no alert)")
 
         open_conflicts = find_conflicts(conn, window_hours=48)
         assert len(open_conflicts) == 1, "expected 1 unalerted conflict"
 
-        people = get_person_commitments(conn, "Priya", days=1)
-        assert len(people) == 2, f"expected 2 commitments, got {len(people)}"
+        people = get_person_commitments(conn, "Priya", days=2)
+        assert len(people) == 1, f"expected 1 Priya commitment, got {len(people)}"
 
-        # Write helpers: insert + idempotency + person reuse.
-        new_node = CommitmentNode(
-            id=0, person_name="Arjun", description="design sync", start_ts=now + 7200,
-            end_ts=now + 9000, source="slack", commitment_type="SOFT",
-            confidence=0.7, raw_text="design sync at 6",
-        )
-        inserted_id = insert_commitment(conn, new_node)
-        assert inserted_id > 0, "insert_commitment did not return an id"
-        # Re-inserting the same content must return the same id (dedup).
-        assert insert_commitment(conn, new_node) == inserted_id, "dedup failed"
-        priya_id = get_or_create_person(conn, "Priya")
-        assert priya_id == 1, "existing person should be reused, not duplicated"
-        print(f"=> insert_commitment id={inserted_id}, dedup + person reuse ok")
+        # Write helpers: idempotency (dedup by external_id) + person reuse.
+        assert insert_commitment(conn, CommitmentNode(
+            id=0, person_name="Priya", description="see you at 4", start_ts=at_1600,
+            end_ts=None, source="slack", commitment_type="SOFT", confidence=0.75,
+            raw_text="see you at 4"), external_id="slack-1") == slack_id, "dedup failed"
+        assert get_or_create_person(conn, "Priya") == slack_pid, "person should be reused"
+
+        graph = build_graph(conn)
+        print(f"=> graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges; "
+              f"dedup + person reuse ok")
         conn.close()
 
     print("All kg/graph.py smoke tests passed.")
