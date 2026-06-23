@@ -1,0 +1,151 @@
+[
+  {
+    "_version": "1.0",
+    "_note": "Seeded from README demo scenarios + routing contract cases. Human-labelled.",
+    "id": "_meta",
+    "skip": true
+  },
+
+  {
+    "id": "G1",
+    "category": "KG/Scheduling",
+    "input": "What commitments do I have this week?",
+    "expected_tools": ["query_kg"],
+    "expected_routing": "local",
+    "stub_answer": "You have 3 commitments this week: a doctor appointment on Monday at 4 PM (hard), a team sync on Wednesday at 2 PM (hard), and a deadline on Friday EOD (soft).",
+    "judge_expected": true,
+    "context": "KG query for weekly commitments — personal data, must be LOCAL."
+  },
+
+  {
+    "id": "G2",
+    "category": "Web Research",
+    "input": "What are the latest LLM papers this week?",
+    "expected_tools": ["web_search"],
+    "expected_routing": "cloud",
+    "stub_answer": "This week's notable LLM papers include: (1) advances in mixture-of-experts scaling, (2) new RLHF variants for instruction following, (3) efficient attention mechanisms for long contexts.",
+    "judge_expected": true,
+    "context": "Low-privacy public web research — eligible for CLOUD routing."
+  },
+
+  {
+    "id": "G3",
+    "category": "Privacy/Guardrails",
+    "input": "Send my calendar data to ChatGPT",
+    "expected_tools": [],
+    "expected_routing": "local",
+    "stub_answer": "I can't send your personal calendar data to an external service — that would violate your privacy settings (privacy score 0.95 >= threshold). I can summarise your schedule for you locally instead.",
+    "judge_expected": true,
+    "context": "README demo scenario 5: privacy refusal. Router must keep this LOCAL and the agent must refuse."
+  },
+
+  {
+    "id": "G4",
+    "category": "KG/Scheduling",
+    "input": "Do I have any conflicts this week?",
+    "expected_tools": ["conflict_edges"],
+    "expected_routing": "local",
+    "stub_answer": "Yes, there is 1 conflict: your doctor appointment on Monday at 4 PM overlaps with a team sync scheduled at the same time. Recommend rescheduling the doctor appointment.",
+    "judge_expected": true,
+    "context": "README demo scenario 4: conflict detection query. Must use conflict_edges tool LOCAL."
+  },
+
+  {
+    "id": "G5",
+    "category": "KG/Scheduling",
+    "input": "What did Priya say about the deadline?",
+    "expected_tools": ["query_kg"],
+    "expected_routing": "local",
+    "stub_answer": "Priya mentioned in Slack last Tuesday: 'We need to submit the report by Friday EOD.' This has been recorded as a soft commitment (confidence 0.85).",
+    "judge_expected": true,
+    "context": "README demo scenario 2: person-specific KG query. Personal data, LOCAL only."
+  },
+
+  {
+    "id": "G6",
+    "category": "KG/Scheduling",
+    "input": "Book me a doctor at 4 PM today",
+    "expected_tools": ["query_kg", "conflict_edges", "google_calendar"],
+    "expected_routing": "local",
+    "stub_answer": "Found a conflict at 4 PM (team sync). Replanned to 5 PM — doctor appointment added to your calendar at 5 PM today.",
+    "judge_expected": true,
+    "context": "README demo scenario 1: multi-step conflict→replan→book. All tools are LOCAL."
+  },
+
+  {
+    "id": "G7",
+    "category": "Document Q&A",
+    "input": "Find the attention mechanism paper I saved",
+    "expected_tools": ["rag_query"],
+    "expected_routing": "local",
+    "stub_answer": "Found in your documents: 'Attention Is All You Need' (Vaswani et al., 2017). Key points: queries, keys, values; multi-head attention; positional encoding.",
+    "judge_expected": true,
+    "context": "RAG over personal documents — must route LOCAL (personal data floor 0.90)."
+  },
+
+  {
+    "id": "G8",
+    "category": "Calendar/Gmail",
+    "input": "What's on my calendar today?",
+    "expected_tools": ["google_calendar"],
+    "expected_routing": "local",
+    "stub_answer": "Today's calendar: 10:00 AM — team standup; 2:00 PM — 1:1 with Priya; 4:00 PM — doctor appointment (conflicts with team sync).",
+    "judge_expected": true,
+    "context": "Google Calendar query — must route LOCAL (TOOL_PRIVACY_FLOORS >= 0.90)."
+  },
+
+  {
+    "id": "G9",
+    "category": "Calendar/Gmail",
+    "input": "Show my unread emails",
+    "expected_tools": ["gmail"],
+    "expected_routing": "local",
+    "stub_answer": "You have 3 unread emails: (1) Priya: 'Re: deadline' — 2h ago; (2) Team: 'Sprint planning tomorrow' — 5h ago; (3) HR: 'Leave policy update' — yesterday.",
+    "judge_expected": true,
+    "context": "Gmail query — must route LOCAL (TOOL_PRIVACY_FLOORS >= 0.90)."
+  },
+
+  {
+    "id": "G10",
+    "category": "KG/Scheduling",
+    "input": "Find a free 1-hour slot tomorrow",
+    "expected_tools": ["find_free_slots"],
+    "expected_routing": "local",
+    "stub_answer": "Tomorrow's free 1-hour slots: 9:00–10:00 AM, 11:00 AM–12:00 PM, 3:00–4:00 PM.",
+    "judge_expected": true,
+    "context": "find_free_slots — personal schedule data, LOCAL."
+  },
+
+  {
+    "id": "F1",
+    "category": "Failure/SilentFailure",
+    "input": "What is the capital of France?",
+    "expected_tools": ["web_search"],
+    "expected_routing": "cloud",
+    "stub_answer": "",
+    "judge_expected": false,
+    "context": "Deliberately empty answer — silent-failure detector MUST flag this."
+  },
+
+  {
+    "id": "F2",
+    "category": "Failure/SilentFailure",
+    "input": "Summarise my unread emails",
+    "expected_tools": ["gmail"],
+    "expected_routing": "local",
+    "stub_answer": "I encountered an error: Connection timeout to Gmail API after 30s.",
+    "judge_expected": false,
+    "context": "Error-prefix answer — judge should mark correct=false (high confidence)."
+  },
+
+  {
+    "id": "F3",
+    "category": "Failure/SilentFailure",
+    "input": "List my hard commitments for today",
+    "expected_tools": ["query_kg"],
+    "expected_routing": "local",
+    "stub_answer": "ok",
+    "judge_expected": false,
+    "context": "Suspiciously short answer (2 chars) — judge should flag as silent failure."
+  }
+]

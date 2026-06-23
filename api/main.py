@@ -400,6 +400,63 @@ def connectors() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Eval endpoints (Stream 4) — read-only, pure consumers
+# ---------------------------------------------------------------------------
+
+@app.get("/api/eval/report")
+def eval_report() -> dict:
+    """Return the most recent eval report from eval/reports/."""
+    from pathlib import Path as _Path
+    import json as _json
+    reports_dir = _Path(__file__).parent.parent / "eval" / "reports"
+    if not reports_dir.exists():
+        return {"report": None, "message": "No reports yet. Run: python -m eval.runner"}
+    files = sorted(reports_dir.glob("report_*.json"), reverse=True)
+    if not files:
+        return {"report": None, "message": "No reports yet. Run: python -m eval.runner"}
+    try:
+        report = _json.loads(files[0].read_text())
+        report.pop("_report_path", None)
+        return {"report": report}
+    except Exception as e:
+        return JSONResponse({"detail": f"Failed to read report: {e}"}, status_code=500)
+
+
+@app.get("/api/eval/traces")
+def eval_traces(limit: int = 50) -> dict:
+    """List recent eval traces (metadata only, no full answer body)."""
+    from eval.tracer import list_traces
+    return {"traces": list_traces(limit=limit)}
+
+
+@app.get("/api/eval/metrics")
+def eval_metrics() -> dict:
+    """Return aggregated metrics computed from all stored traces."""
+    from eval.tracer import list_traces
+    from eval.metrics import routing_accuracy, latency_stats, token_stats
+    import json as _json
+    from pathlib import Path as _Path
+    traces_dir = _Path(__file__).parent.parent / "eval" / "traces"
+    traces = []
+    if traces_dir.exists():
+        for f in sorted(traces_dir.glob("*.json"), reverse=True)[:200]:
+            try:
+                traces.append(_json.loads(f.read_text()))
+            except Exception:
+                pass
+    if not traces:
+        return {"metrics": None, "message": "No traces yet. Run: python -m eval.runner"}
+    return {
+        "metrics": {
+            "routing_accuracy": routing_accuracy(traces).as_dict(),
+            "latency": latency_stats(traces),
+            "tokens": token_stats(traces),
+        },
+        "n_traces": len(traces),
+    }
+
+
+# ---------------------------------------------------------------------------
 # projmgmt addon — mount as ASGI sub-application at /projmgmt
 # ---------------------------------------------------------------------------
 # projmgmt's backend/ directory is added to sys.path only for the duration of
