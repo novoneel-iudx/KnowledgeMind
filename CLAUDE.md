@@ -36,6 +36,8 @@ routing/router.py      → privacy + complexity classifier → LOCAL (Ollama) or
 agent/orchestrator.py  → HybridMindAgent, 3 agency levels (L1/L2/L3)
 agent/tools.py         → tool registry (dispatch_tool); every tool returns {success, formatted}
 monitor/fsm.py         → LangGraph FSM: POLL → EXTRACT → UPDATE → CHECK → ALERT
+runtime/               → Proactive runtime: loader (jobs/skills) + cron + runner (scheduler)
+                         + briefing composer + dismissable nudge outbox
 kg/                    → SQLite + NetworkX KG; person-agnostic conflict detection
 extraction/            → spaCy NER + few-shot commitment extractor + timeparse.py resolver
 connectors/            → Slack/Calendar/Gmail (BaseConnector) + Hermes signal sources (below)
@@ -46,7 +48,17 @@ memory/memory_manager.py → per-session history (turns table)
 ### API endpoints (every `/api/*` is gated by `ACCESS_KEY` when set)
 `GET /api/status` · `POST /api/scan` · `GET /api/commitments` · `GET /api/conflicts` ·
 `POST /api/chat` · `GET|POST /api/documents` · `POST /api/rag/query` · `GET|POST /api/config` ·
-`GET /api/connectors`. The static SPA is served at `/` (not gated, so the login screen can load).
+`GET /api/connectors` · `GET /api/briefing` · `GET /api/nudges` · `POST /api/nudges/{id}/dismiss` ·
+`GET /api/runtime/jobs` · `POST /api/runtime/tick`. The static SPA is served at `/` (not gated, so the login screen can load).
+
+### Proactive runtime (`runtime/`)
+Loader parses `hermes_jobs/*.json` + `hermes_skills/*.md`; the runner fires due jobs (hand-rolled
+cron, no new dep) and runs each skill **through `agent.run()`** (→ privacy router; never a direct
+cloud call), writing results to the nudge outbox. Clock + agent are injectable for offline tests
+(`python -m runtime.tests`). Quiet hours (`preemptive_quiet_hours_*`) queue nudges as `suppressed`
+instead of delivering. The background loop is **off by default** (`proactive_runtime_enabled`);
+`POST /api/runtime/tick` fires jobs manually. The runtime only *consumes* `run()` (additive — it
+surfaces `routing_log`/`token_summary`); Contract 2 is unchanged.
 
 ### Access-key auth (api/main.py)
 Set `ACCESS_KEY` to lock the app: every `/api/*` request must send `X-Access-Key: <ACCESS_KEY>` (else 401). Unset → open (local dev). The React `Login` screen captures the key (localStorage) and attaches it to every request.

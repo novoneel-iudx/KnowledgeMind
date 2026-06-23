@@ -130,6 +130,16 @@ class AppConfig:
     preemptive_quiet_hours_start: int = 22      # no Discord DMs after 10 PM
     preemptive_quiet_hours_end: int = 8         # no Discord DMs before 8 AM
 
+    # -------------------------------------------------------------------------
+    # Extension: proactive runtime
+    # -------------------------------------------------------------------------
+    # Background scheduler is OFF by default: on the deployed Space (no Ollama)
+    # every skill would fall back to Groq and could exhaust the free-tier daily
+    # limit unattended. Enable to run the cron loop in the FastAPI lifespan;
+    # POST /api/runtime/tick always works for manual/demo firing regardless.
+    proactive_runtime_enabled: bool = False
+    proactive_tick_seconds: int = 60
+
     def is_ready(self) -> bool:
         """True if minimum config for operation is present."""
         return bool(self.groq_api_key and self.local_model and self.setup_complete)

@@ -25,9 +25,13 @@ jobs:
         run: |
           for m in kg.schema kg.graph kg.queries connectors.base connectors.mock \
                    connectors.factory routing.router extraction.prompts extraction.ner \
-                   extraction.timeparse extraction.commitment monitor.fsm; do
+                   extraction.timeparse extraction.commitment monitor.fsm \
+                   runtime.cron runtime.loader runtime.outbox runtime.briefing \
+                   runtime.runner; do
             echo "== $m =="; python -m $m;
           done
+      - name: Proactive runtime unit tests (offline)
+        run: python -m runtime.tests
       - name: Benchmark (routing/privacy contract)
         run: python benchmark.py --mode static
       - name: Conflict-detection demo

@@ -112,6 +112,7 @@ async def lifespan(_app: FastAPI):
         except FileNotFoundError:
             pass
     _run_scan()  # seed so the dashboard has data immediately
+
     # Archive stale commitments on startup — keeps conflict detection clean.
     try:
         from kg.janitor import run_janitor_for_config
@@ -133,6 +134,17 @@ async def lifespan(_app: FastAPI):
         _sched_stop()
     except Exception:
         pass
+
+    # Proactive runtime: the nudge outbox lives in the demo DB, so it
+    # is already wiped by the unlink above. Start the cron loop only when enabled
+    # (off by default — see AppConfig.proactive_runtime_enabled).
+    runtime = _get_runtime()
+    if cfg.proactive_runtime_enabled:
+        await runtime.start()
+    try:
+        yield
+    finally:
+        await runtime.stop()
 
 
 app = FastAPI(title="KnowledgeMind", lifespan=lifespan)
@@ -489,6 +501,80 @@ def connectors() -> dict:
     from agent.tools import dispatch_tool
     names = ["strava", "apple_health", "todoist", "spotify"]
     return {"connectors": {name: dispatch_tool(name, {}) for name in names}}
+
+
+# ---------------------------------------------------------------------------
+# Proactive runtime — briefing, nudge outbox, job catalog, tick
+# ---------------------------------------------------------------------------
+
+_runtime = None
+
+
+def _runtime_agent_run(prompt: str, level: str) -> dict:
+    """Route skills through the real agent when a key is set, else the offline
+    demo runner — chosen per-call so adding a key later takes effect live."""
+    from runtime.runner import default_agent_run, demo_agent_run
+    cfg = get_config()
+    runner = default_agent_run if cfg.groq_api_key else demo_agent_run
+    return runner(prompt, level)
+
+
+def _get_runtime():
+    global _runtime
+    if _runtime is None:
+        from runtime.runner import ProactiveRuntime
+        cfg = get_config()
+        _runtime = ProactiveRuntime(
+            agent_run=_runtime_agent_run,
+            db_path=cfg.db_path,
+            tick_seconds=cfg.proactive_tick_seconds,
+        )
+    return _runtime
+
+
+@app.get("/api/briefing")
+def briefing() -> dict:
+    """Today's digest: commitments + conflicts + task load + readiness."""
+    from runtime.briefing import compose_briefing
+    cfg = get_config()
+    return {"briefing": compose_briefing(db_path=cfg.db_path)}
+
+
+@app.get("/api/nudges")
+def list_nudges_api(include_dismissed: bool = False) -> dict:
+    """Proactive nudge feed (newest first). Suppressed (quiet-hours) nudges are
+    included but flagged so the UI can hold delivery."""
+    from runtime import outbox
+    cfg = get_config()
+    nudges = outbox.list_nudges(include_dismissed=include_dismissed, db_path=cfg.db_path)
+    return {
+        "nudges": nudges,
+        "active_count": outbox.count_active(db_path=cfg.db_path),
+    }
+
+
+@app.post("/api/nudges/{nudge_id}/dismiss")
+def dismiss_nudge_api(nudge_id: int) -> dict:
+    from runtime import outbox
+    cfg = get_config()
+    dismissed = outbox.dismiss_nudge(nudge_id, db_path=cfg.db_path)
+    return {"ok": dismissed, "id": nudge_id, "dismissed": dismissed}
+
+
+@app.get("/api/runtime/jobs")
+def runtime_jobs() -> dict:
+    """Scheduled-job catalog for the UI: schedule, agency level, last run."""
+    rt = _get_runtime()
+    return {"jobs": rt.catalog(), "errors": rt.load.errors}
+
+
+@app.post("/api/runtime/tick")
+def runtime_tick(force: bool = False) -> dict:
+    """Manually advance the scheduler. force=true runs every job regardless of
+    schedule (handy for the demo); otherwise fires only jobs due right now."""
+    rt = _get_runtime()
+    fired = rt.run_due_jobs(force=force)
+    return {"fired": fired, "count": len(fired)}
 
 
 # ---------------------------------------------------------------------------
