@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS commitments (
     channel_id      TEXT,
     external_id     TEXT,
     created_at      REAL NOT NULL,
-    updated_at      REAL NOT NULL
+    updated_at      REAL NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS conflicts (
@@ -103,9 +104,15 @@ CREATE TABLE IF NOT EXISTS rag_documents (
     indexed_at   REAL NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_commitments_time ON commitments (start_ts, end_ts);
-CREATE INDEX IF NOT EXISTS idx_turns_session    ON turns (session_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_conflicts_alert  ON conflicts (alerted, detected_at);
+CREATE INDEX IF NOT EXISTS idx_commitments_time   ON commitments (start_ts, end_ts);
+CREATE INDEX IF NOT EXISTS idx_commitments_status ON commitments (status, start_ts);
+CREATE INDEX IF NOT EXISTS idx_turns_session      ON turns (session_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_conflicts_alert    ON conflicts (alerted, detected_at);
+"""
+
+# Migration: add status column to existing databases that predate this field.
+_MIGRATE_STATUS_SQL: str = """
+ALTER TABLE commitments ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
 """
 
 # SQLite busy timeout (ms) -- covers the 'SQLite locked' retry policy in SPEC 8
@@ -136,6 +143,10 @@ def init_db(path: str) -> sqlite3.Connection:
     conn.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA_SQL)
+    # Idempotent migration: add status column if it predates this field.
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(commitments)")}
+    if "status" not in cols:
+        conn.executescript(_MIGRATE_STATUS_SQL)
     conn.commit()
     return conn
 

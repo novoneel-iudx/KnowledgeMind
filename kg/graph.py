@@ -107,7 +107,8 @@ def build_graph(conn: sqlite3.Connection) -> nx.DiGraph:
 
     commitment_rows = conn.execute(
         """SELECT c.*, p.name AS person_name
-           FROM commitments c LEFT JOIN persons p ON c.person_id = p.id"""
+           FROM commitments c LEFT JOIN persons p ON c.person_id = p.id
+           WHERE c.status = 'active'"""
     ).fetchall()
     for row in commitment_rows:
         node_id = f"commitment:{row['id']}"
@@ -123,7 +124,11 @@ def build_graph(conn: sqlite3.Connection) -> nx.DiGraph:
             graph.add_edge(f"person:{row['person_id']}", node_id, label="has_commitment")
 
     for conflict in conn.execute(
-        "SELECT commitment_a_id, commitment_b_id, overlap_minutes FROM conflicts"
+        """SELECT cf.commitment_a_id, cf.commitment_b_id, cf.overlap_minutes
+           FROM conflicts cf
+           JOIN commitments ca ON cf.commitment_a_id = ca.id
+           JOIN commitments cb ON cf.commitment_b_id = cb.id
+           WHERE ca.status = 'active' AND cb.status = 'active'"""
     ).fetchall():
         node_a = f"commitment:{conflict['commitment_a_id']}"
         node_b = f"commitment:{conflict['commitment_b_id']}"
@@ -159,7 +164,8 @@ def detect_new_conflicts(conn: sqlite3.Connection, new_commitment_id: int) -> li
     # headline scenario -- impossible.) Same-real-event records across channels
     # may surface here; cross-source event de-dup is future work, out of scope.
     candidates = conn.execute(
-        "SELECT id FROM commitments WHERE id != ? AND commitment_type != 'TENTATIVE'",
+        """SELECT id FROM commitments
+           WHERE id != ? AND commitment_type != 'TENTATIVE' AND status = 'active'""",
         (new_commitment_id,),
     ).fetchall()
 
@@ -219,7 +225,10 @@ def find_conflicts(conn: sqlite3.Connection, window_hours: float = 24.0) -> list
                   cf.commitment_a_id, cf.commitment_b_id
            FROM conflicts cf
            JOIN commitments ca ON cf.commitment_a_id = ca.id
-           WHERE cf.alerted = 0 AND ca.start_ts <= ?
+           JOIN commitments cb ON cf.commitment_b_id = cb.id
+           WHERE cf.alerted = 0
+             AND ca.status = 'active' AND cb.status = 'active'
+             AND ca.start_ts <= ?
            ORDER BY cf.detected_at DESC""",
         (window_end,),
     ).fetchall()
@@ -249,7 +258,7 @@ def get_person_commitments(
     rows = conn.execute(
         """SELECT c.*, p.name AS person_name
            FROM commitments c JOIN persons p ON c.person_id = p.id
-           WHERE p.name = ? AND c.start_ts BETWEEN ? AND ?
+           WHERE p.name = ? AND c.start_ts BETWEEN ? AND ? AND c.status = 'active'
            ORDER BY c.start_ts ASC""",
         (person_name, now, window_end),
     ).fetchall()

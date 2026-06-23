@@ -112,6 +112,14 @@ async def lifespan(_app: FastAPI):
         except FileNotFoundError:
             pass
     _run_scan()  # seed so the dashboard has data immediately
+    # Archive stale commitments on startup — keeps conflict detection clean.
+    try:
+        from kg.janitor import run_janitor_for_config
+        jr = run_janitor_for_config(apply=True)
+        if jr.total_archived or jr.deleted_turns:
+            print(f"[janitor] {jr.summary()}")
+    except Exception as e:
+        print(f"[janitor] startup run skipped: {e}")
     yield
 
 
@@ -386,6 +394,28 @@ def set_config_api(upd: ConfigUpdate) -> dict:
 # ---------------------------------------------------------------------------
 # Connectors (Hermes signal tools) -- fitness / health / tasks / music
 # ---------------------------------------------------------------------------
+
+@app.post("/api/kg/janitor")
+def kg_janitor(dry_run: bool = False) -> dict:
+    """Archive stale commitments and prune old turns.
+
+    Pass ?dry_run=true to see counts without writing.
+    """
+    from kg.janitor import run_janitor_for_config
+    try:
+        result = run_janitor_for_config(apply=not dry_run)
+        return {
+            "dry_run": dry_run,
+            "archived_tentative": result.archived_tentative,
+            "archived_soft": result.archived_soft,
+            "archived_hard": result.archived_hard,
+            "archived_conflicts": result.archived_conflicts,
+            "deleted_turns": result.deleted_turns,
+            "summary": result.summary(),
+        }
+    except Exception as e:
+        return JSONResponse({"detail": str(e)}, status_code=500)
+
 
 @app.get("/api/connectors")
 def connectors() -> dict:
