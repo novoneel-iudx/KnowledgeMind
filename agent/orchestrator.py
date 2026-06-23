@@ -129,7 +129,7 @@ def _call_groq_fast(
     return response.choices[0].message.content
 
 
-def _call_ollama(
+def _call_local(
     messages: list[dict],
     system: str,
     tracker: TokenTracker,
@@ -138,6 +138,9 @@ def _call_ollama(
     max_tokens: int = 512,
 ) -> str:
     cfg = get_config()
+
+    if cfg.local_provider == "groq":
+        return _call_groq_fast(messages, system, tracker, node, agency_level, max_tokens)
 
     try:
         from ollama import Client
@@ -162,7 +165,6 @@ def _call_ollama(
         return response.message.content
 
     except Exception as e:
-        # Fallback to Groq fast tier if Ollama unreachable
         print(f"[Orchestrator] Ollama unavailable ({e}), falling back to Groq fast tier")
         return _call_groq_fast(messages, system, tracker, f"{node}_fallback", agency_level, max_tokens)
 
@@ -222,7 +224,7 @@ def _parse_tool_params(
     # "tomorrow") correctly instead of hallucinating a training-era date.
     today = datetime.date.today().isoformat()
     prompt = f"Today's date is {today}.\nTool: {tool_name}\nInstruction: {step_input}"
-    call_fn = _call_ollama if prefer_local else _call_groq_fast
+    call_fn = _call_local if prefer_local else _call_groq_fast
 
     for attempt in range(MAX_REPLAN_ATTEMPTS):
         try:
@@ -311,7 +313,7 @@ def _run_l1(
     )
     messages = history + [{"role": "user", "content": user_input}]
     if decide_routing.decision == RoutingDecision.LOCAL:
-        decision_raw = _call_ollama(messages, decide_system, tracker, "single_call", agency_level)
+        decision_raw = _call_local(messages, decide_system, tracker, "single_call", agency_level)
     else:
         decision_raw = _call_groq(messages, decide_system, tracker, "single_call", agency_level, max_tokens=1000)
 
@@ -354,8 +356,8 @@ def _run_l1(
     # Privacy: synthesise locally for LOCAL-routed (personal) tools so their
     # results never reach the cloud; CLOUD-safe tools may synthesise on Groq.
     if tool_routing.decision == RoutingDecision.LOCAL:
-        answer = _call_ollama([{"role": "user", "content": synth_input}],
-                              DIRECT_ANSWER_PROMPT, tracker, "single_call", agency_level)
+        answer = _call_local([{"role": "user", "content": synth_input}],
+                             DIRECT_ANSWER_PROMPT, tracker, "single_call", agency_level)
     else:
         answer = _call_groq([{"role": "user", "content": synth_input}],
                             DIRECT_ANSWER_PROMPT, tracker, "single_call", agency_level, max_tokens=1000)
@@ -668,7 +670,7 @@ class HybridMindAgent:
                     "privacy_score": 1.0, "complexity_score": 0.0,
                     "reason": "Greeting / small talk answered locally; no tools needed.",
                 })
-                answer = _call_ollama(
+                answer = _call_local(
                     history + [{"role": "user", "content": user_input}],
                     DIRECT_ANSWER_PROMPT, self.tracker, "single_call", level,
                 ).strip() or "Hello! How can I help?"

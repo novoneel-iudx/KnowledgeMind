@@ -87,12 +87,22 @@ def _parse_json(text: str) -> Optional[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def _default_llm_caller(system_prompt: str, user_prompt: str) -> str:
-    """Call the local model; fall back to Groq fast if Ollama is unreachable."""
+    """Call the local/SLM model; fall back to Groq fast if Ollama is unreachable."""
     cfg = get_config()
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+    if cfg.local_provider == "groq":
+        from groq import Groq
+        client = Groq(api_key=cfg.groq_api_key)
+        response = client.chat.completions.create(
+            model=cfg.online_slm_model,
+            messages=messages,
+            temperature=0.0,
+            max_tokens=_MAX_TOKENS,
+        )
+        return response.choices[0].message.content
     try:
         from ollama import Client
         client = Client(host=cfg.ollama_base_url)

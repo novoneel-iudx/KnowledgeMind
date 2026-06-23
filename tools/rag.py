@@ -84,8 +84,13 @@ class RagTool:
             from chromadb.utils import embedding_functions
 
             cfg = get_config()
-            Path(cfg.chroma_persist_dir).mkdir(parents=True, exist_ok=True)
-            client = chromadb.PersistentClient(path=cfg.chroma_persist_dir)
+            try:
+                Path(cfg.chroma_persist_dir).mkdir(parents=True, exist_ok=True)
+                client = chromadb.PersistentClient(path=cfg.chroma_persist_dir)
+            except Exception:
+                print("[RAG] WARNING: chroma_persist_dir not writable — using in-memory client (data resets on restart)")
+                client = chromadb.EphemeralClient()
+
             embedder = embedding_functions.SentenceTransformerEmbeddingFunction(
                 model_name=_EMBED_MODEL_NAME
             )

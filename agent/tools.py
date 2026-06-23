@@ -29,9 +29,6 @@ from duckduckgo_search import DDGS
 from tavily import TavilyClient
 
 from config.store import get_config
-from connectors.calendar import GoogleCalendarConnector
-from connectors.gmail import GmailConnector
-from connectors.slack import SlackConnector
 from kg.schema import get_db_connection
 from kg.queries import query_kg as _kg_query
 from kg.queries import find_free_slots as _kg_free_slots
@@ -201,6 +198,7 @@ def _load_mock(filename: str) -> Any:
 
 
 def _tool_google_calendar(params: dict[str, Any]) -> dict[str, Any]:
+    from connectors.calendar import GoogleCalendarConnector
     action = params.get("action", "list")
     connector = GoogleCalendarConnector()
     live = connector.health_check()
@@ -250,6 +248,7 @@ def _tool_google_calendar(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_gmail(params: dict[str, Any]) -> dict[str, Any]:
+    from connectors.gmail import GmailConnector
     action = params.get("action", "list")
 
     # PRIVACY rule 6: the agent may draft but must NEVER send. Send is refused
@@ -298,6 +297,7 @@ def _tool_gmail(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_send_message(params: dict[str, Any]) -> dict[str, Any]:
+    from connectors.slack import SlackConnector
     channel = params.get("channel", "")
     text = params.get("text", "")
     if not text.strip():

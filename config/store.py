@@ -57,6 +57,9 @@ class AppConfig:
     # cloud_model (70B): far higher free-tier token budget, slightly lower
     # quality. Defaults to True (8B) so the daily limit is not hit easily.
     use_fast_cloud_model: bool = True
+    # "ollama" = on-device Ollama; "groq" = Groq fast tier (no local GPU needed)
+    local_provider: str = "ollama"
+    online_slm_model: str = "llama-3.1-8b-instant"
 
     # API keys
     groq_api_key: str = ""
@@ -83,6 +86,8 @@ class AppConfig:
 
     def is_ready(self) -> bool:
         """True if minimum config for operation is present."""
+        if self.local_provider == "groq":
+            return bool(self.groq_api_key and self.setup_complete)
         return bool(self.groq_api_key and self.local_model and self.setup_complete)
 
     def to_dict(self) -> dict:
@@ -103,6 +108,9 @@ _ENV_OVERRIDES: dict[str, tuple[str, ...]] = {
     "local_model":             ("KM_LOCAL_MODEL",),
     "ollama_base_url":         ("KM_OLLAMA_URL",),
     "db_path":                 ("KM_DB_PATH",),
+    "local_provider":          ("KM_LOCAL_PROVIDER",),
+    "online_slm_model":        ("KM_ONLINE_SLM_MODEL",),
+    "setup_complete":          ("KM_SETUP_COMPLETE",),
 }
 
 

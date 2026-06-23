@@ -4,6 +4,7 @@
 .env
 .env.*
 !.env.example
+.streamlit/secrets.toml
 credentials.json
 client_secret*.json
 google_token.json

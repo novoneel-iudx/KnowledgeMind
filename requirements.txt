@@ -1,65 +1,45 @@
 # KnowledgeMind - Python dependencies
 # ------------------------------------
 # Install:  pip install -r requirements.txt
-# Then:     python -m spacy download en_core_web_sm   (see spaCy note below)
-#
-# Constraints (see CLAUDE.md):
-#   - Must install cleanly on Windows 11 x64 via pip.
-#   - torch IS allowed: sentence-transformers requires it for embeddings.
-#     tensorflow / torchvision / torchaudio are still excluded (not needed).
-#   - Prefer stdlib over third-party for simple tasks (urllib, sqlite3 are NOT listed here).
-#
-# Versions are intentionally left unpinned for this scaffold. Pin them
-# (pip freeze) once a known-good combination has been validated end to end.
+# Then:     python -m spacy download en_core_web_sm
 
-# -- LLM SDKs (called directly by agent/orchestrator.py and ui/setup.py) ------
+# -- LLM SDKs ----------------------------------------------------------------
 groq
-ollama
 
-# -- LangChain / LangGraph orchestration stack -------------------------------
-langgraph
-langchain
-langchain-groq
-langchain-ollama
-langchain-community
+# -- Orchestration -----------------------------------------------------------
+langgraph              # used by monitor/fsm.py
 
 # -- Vector store / embeddings / RAG -----------------------------------------
 chromadb
 sentence-transformers
-torch              # required by sentence-transformers (CPU wheel is fine)
+torch                  # required by sentence-transformers (CPU wheel is fine)
 pypdf
 
 # -- NLP / commitment extraction ---------------------------------------------
 spacy
-# en_core_web_sm is a spaCy model, NOT on PyPI under a plain name.
-# Install it separately after the packages above:
-#     python -m spacy download en_core_web_sm
-# (The build scripts build_linux.sh / build_exe.bat already do this.)
+# Install the model separately:  python -m spacy download en_core_web_sm
+# On Streamlit Cloud this is handled by setup.sh automatically.
 
 # -- Web search --------------------------------------------------------------
 tavily-python
 duckduckgo-search
 
 # -- Connectors: Google (Calendar, Gmail) ------------------------------------
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-google-api-python-client
+# Only needed when KM_GOOGLE_MOCK=false (real Google OAuth).
+# google-auth
+# google-auth-oauthlib
+# google-auth-httplib2
+# google-api-python-client
 
 # -- Connectors: Slack -------------------------------------------------------
-slack-sdk
+# Only needed when a real Slack token is configured.
+# slack-sdk
 
 # -- Knowledge graph ---------------------------------------------------------
 networkx
 pyvis
 
 # -- UI / config / utilities -------------------------------------------------
-gradio
+streamlit
 python-dotenv
-pydantic
-rich
-pandas
 tabulate
-
-# -- Build only (packaging the .exe; not needed to run from source) ----------
-pyinstaller

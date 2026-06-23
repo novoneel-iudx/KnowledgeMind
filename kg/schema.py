@@ -140,14 +140,46 @@ def init_db(path: str) -> sqlite3.Connection:
     return conn
 
 
+class _NoCloseConn:
+    """
+    Wraps a persistent in-memory connection so caller close() calls are no-ops.
+    SQLite in-memory databases are destroyed on close, so the singleton must
+    survive for the lifetime of the process.
+    """
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def close(self) -> None:
+        pass
+
+    def __getattr__(self, name: str):
+        return getattr(self._conn, name)
+
+
+_in_memory_conn: Optional[sqlite3.Connection] = None
+
+
 def get_db_connection(path: str) -> sqlite3.Connection:
     """
     Return a ready-to-use connection with the schema guaranteed to exist.
-
-    Thin wrapper over init_db() so callers can use an intention-revealing name
-    when they just want a working connection. Callers own closing it.
+    Falls back to a shared in-memory SQLite database when the path is not
+    writable (e.g. ephemeral cloud filesystem). Data survives the process
+    lifetime but is lost on restart.
     """
-    return init_db(path)
+    global _in_memory_conn
+    try:
+        return init_db(path)
+    except OSError:
+        if _in_memory_conn is None:
+            print("[KG] WARNING: db_path not writable — using in-memory SQLite (data resets on restart)")
+            conn = sqlite3.connect(":memory:", check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.executescript(SCHEMA_SQL)
+            conn.commit()
+            _in_memory_conn = conn
+        return _NoCloseConn(_in_memory_conn)  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------

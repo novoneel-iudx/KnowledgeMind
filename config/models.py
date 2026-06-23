@@ -63,3 +63,16 @@ def get_recommended_models() -> list[str]:
         "qwen2.5:7b",       # better reasoning if RAM allows
         "mistral:7b",       # good general purpose
     ]
+
+
+def list_online_slm_models() -> list[str]:
+    """
+    Curated list of Groq-hosted SLMs usable as the local/fast tier.
+    Ordered by latency (fastest first).
+    """
+    return [
+        "llama-3.1-8b-instant",  # primary — lowest latency on Groq free tier
+        "llama-3.2-3b-preview",  # smaller, even faster
+        "llama-3.2-1b-preview",  # minimal footprint
+        "gemma2-9b-it",          # Google, strong instruction following
+    ]
