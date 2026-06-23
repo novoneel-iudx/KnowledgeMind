@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scenario Runner — Project Advisor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #232635; --border: #2e3148;
+    --text: #e2e4f0; --muted: #7c7f9a; --accent: #6c8ebf; --accent-dim: #3a4f73;
+    --green: #59a14f; --red: #e15759; --yellow: #edc948; --orange: #f28e2b;
+  }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; font-size: 13px; overflow: hidden; }
+
+  /* Header */
+  #hdr { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #hdr h1 { font-size: 15px; font-weight: 600; color: var(--accent); }
+  #hdr .spacer { flex: 1; }
+  #open-main { font-size: 11px; padding: 4px 12px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); border-radius: 4px; cursor: pointer; }
+  #open-main:hover { color: var(--text); }
+  button { cursor: pointer; border: none; border-radius: 4px; font-family: inherit; }
+  .btn-primary { background: var(--accent); color: #fff; padding: 6px 16px; font-size: 12px; font-weight: 600; }
+  .btn-primary:hover { background: #7a9fd4; }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; font-size: 11px; }
+  .btn-ghost:hover { color: var(--text); background: var(--surface2); }
+
+  /* Body layout */
+  #body { display: grid; grid-template-columns: 420px 1fr; flex: 1; overflow: hidden; }
+
+  /* Left: scenario tree */
+  #tree-panel { border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  #tree-controls { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #tree-controls span { font-size: 11px; color: var(--muted); }
+  #sel-count { font-weight: 600; color: var(--accent); }
+  #tree { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+  /* Document group */
+  .doc-group { border-bottom: 1px solid var(--border); }
+  .doc-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; user-select: none; }
+  .doc-header:hover { background: var(--surface2); }
+  .doc-toggle { font-size: 10px; color: var(--muted); width: 12px; }
+  .doc-check input { accent-color: var(--accent); width: 13px; height: 13px; }
+  .doc-label { font-size: 12px; font-weight: 600; flex: 1; }
+  .doc-badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+  .badge-it { background: #1a2e4a; color: #6c8ebf; }
+  .badge-ds { background: #1a3d1a; color: #59a14f; }
+  .doc-progress { font-size: 10px; color: var(--muted); }
+
+  .msg-list { display: none; flex-direction: column; }
+  .msg-list.open { display: flex; }
+  .msg-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 12px 6px 30px; border-top: 1px solid var(--border); transition: background .15s; }
+  .msg-row:hover { background: var(--surface2); }
+  .msg-row input[type=checkbox] { accent-color: var(--accent); margin-top: 2px; flex-shrink: 0; width: 13px; height: 13px; }
+  .msg-info { flex: 1; min-width: 0; }
+  .msg-type { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; text-transform: uppercase; margin-bottom: 3px; }
+  .type-aligned { background: #1a3d1a; color: var(--green); }
+  .type-misaligned { background: #3d1010; color: var(--red); }
+  .type-edge { background: #2a1a00; color: var(--orange); }
+  .msg-text { font-size: 11px; color: var(--muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .msg-tags { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 3px; }
+  .mtag { font-size: 9px; padding: 1px 5px; background: var(--accent-dim); color: var(--accent); border-radius: 8px; }
+  .msg-status { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+  .status-icon { font-size: 14px; line-height: 1; }
+  .score-pill { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 8px; }
+  .score-high { background: #1a3d1a; color: var(--green); }
+  .score-mid  { background: #3d3010; color: var(--yellow); }
+  .score-low  { background: #3d1010; color: var(--red); }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Right: execution log */
+  #log-panel { display: flex; flex-direction: column; overflow: hidden; }
+  #log-header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+  #log-header .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  #log-header .live-dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  #log { flex: 1; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .log-entry { border-radius: 5px; padding: 8px 10px; font-size: 11px; line-height: 1.6; }
+  .log-info    { background: var(--surface2); border-left: 3px solid var(--accent); }
+  .log-success { background: #1a3d1a22; border-left: 3px solid var(--green); }
+  .log-warn    { background: #3d301022; border-left: 3px solid var(--yellow); }
+  .log-error   { background: #3d101022; border-left: 3px solid var(--red); }
+  .log-section { font-weight: 700; color: var(--accent); font-size: 12px; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-top: 4px; }
+  .log-time { color: var(--muted); font-size: 10px; }
+  .log-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .chip { font-size: 10px; padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border); }
+  .chip.in   { border-color: var(--green); color: var(--green); }
+  .chip.out  { border-color: var(--red); color: var(--red); }
+  .chip.dev  { border-color: var(--yellow); color: var(--yellow); }
+  .chip.rec  { border-color: var(--accent); color: var(--accent); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <h1>Scenario Runner</h1>
+  <span id="run-status" style="font-size:11px;color:var(--muted)">Idle</span>
+  <div class="spacer"></div>
+  <button class="btn-ghost" onclick="selectAll(true)">Select All</button>
+  <button class="btn-ghost" onclick="selectAll(false)">Deselect All</button>
+  <button class="btn-primary" id="run-btn" onclick="runSelected()">▶ Run Selected</button>
+  <button id="open-main" onclick="openMain()">Open Main UI ↗</button>
+</div>
+
+<div id="body">
+  <div id="tree-panel">
+    <div id="tree-controls">
+      <span><span id="sel-count">0</span> scenarios selected</span>
+      <div class="spacer"></div>
+      <button class="btn-ghost" onclick="expandAll(true)">Expand All</button>
+      <button class="btn-ghost" onclick="expandAll(false)">Collapse All</button>
+    </div>
+    <div id="tree"></div>
+  </div>
+
+  <div id="log-panel">
+    <div id="log-header">
+      <div class="live-dot" id="live-dot"></div>
+      Execution Log
+      <div class="spacer"></div>
+      <button class="btn-ghost" onclick="clearLog()">Clear</button>
+    </div>
+    <div id="log"><div style="color:var(--muted);text-align:center;padding:40px 0">Select scenarios and click Run.</div></div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+// ── Scenario data (mirrors tests/conversations.py) ────────────────────────────
+const SCENARIOS = {
+  "it_01_ecommerce_platform.pdf": {
+    label: "E-Commerce Platform", domain: "IT",
+    messages: [
+      { id:"it01_a1", type:"aligned", content:"We've completed WI-001 User Authentication with OAuth2 and MFA. SAST scan passed with zero critical findings. Ready to start WI-002 Product Catalog next sprint.", tags:["#decision","#sprint"], expectMin:60 },
+      { id:"it01_a2", type:"aligned", content:"The CREST-certified firm has completed the pre-launch penetration test. All critical vulnerabilities have been remediated within the 14-day window. PCI-DSS QSA engagement is scheduled for next week.", tags:["#architecture"], expectMin:65 },
+      { id:"it01_a3", type:"aligned", content:"We are delivering the MVP storefront by Month 4, including product catalog, shopping cart, and Stripe payment integration. 100 end-to-end purchase transactions validated in staging.", tags:["#feature","#decision"], expectMin:70 },
+      { id:"it01_m1", type:"misaligned", content:"The client has asked us to integrate a cryptocurrency payment gateway (Bitcoin and Ethereum) into the checkout flow. We think this is a good expansion.", tags:["#feature"], expectMax:40 },
+      { id:"it01_m2", type:"misaligned", content:"To save costs, we are proposing to skip the VAPT this year and instead rely on our internal security review. We'll do the PCI-DSS QSA next quarter.", tags:["#decision"], expectMax:30 },
+      { id:"it01_m3", type:"misaligned", content:"We plan to offshore the entire backend development to a subcontracted team without informing the client. This will help us cut costs by 40%.", tags:["#decision"], expectMax:25 },
+      { id:"it01_e1", type:"edge", content:"The recommendation engine sprint is running 2 weeks behind schedule. We estimate the delay will not exceed 3 weeks total.", tags:["#concern"] },
+    ]
+  },
+  "it_02_erp_implementation.pdf": {
+    label: "Enterprise ERP System", domain: "IT",
+    messages: [
+      { id:"it02_a1", type:"aligned", content:"Finance module parallel run completed for 2 consecutive months. Trial balance matches legacy to $0.01. CFO has signed off on WI-001. Starting inventory module next.", tags:["#decision","#sprint"], expectMin:65 },
+      { id:"it02_a2", type:"aligned", content:"SOC 2 Type I evidence collection tooling is live from Month 1 as required. Internal audit is scheduled for Month 7, ahead of the Month 8 deadline.", tags:["#architecture"], expectMin:60 },
+      { id:"it02_a3", type:"aligned", content:"Quarterly VAPT completed. All critical findings resolved within 7 days. Security report delivered to Client CISO.", tags:["#decision"], expectMin:60 },
+      { id:"it02_m1", type:"misaligned", content:"We want to bring in a third-party ERP consulting firm to handle the manufacturing execution module without telling the client.", tags:["#decision"], expectMax:20 },
+      { id:"it02_m2", type:"misaligned", content:"The client wants custom AI-powered forecasting tools across all 8 plants. We think we should build this as an add-on to the ERP.", tags:["#feature"], expectMax:35 },
+      { id:"it02_m3", type:"misaligned", content:"We plan to retain a copy of the custom ERP integrations for ManufaCo to reuse in our next ERP project.", tags:["#decision"], expectMax:10 },
+      { id:"it02_e1", type:"edge", content:"Multi-site rollout for Plant 7 and Plant 8 will be delayed 3 weeks due to network infrastructure issues on the client side.", tags:["#concern","#blocker"] },
+    ]
+  },
+  "it_03_cloud_migration.pdf": {
+    label: "Cloud Migration", domain: "IT",
+    messages: [
+      { id:"it03_a1", type:"aligned", content:"Wave 1 non-critical app migration completed. All 5 apps passed 30-day stability test. Security Hub score is 87%, above the 80% threshold.", tags:["#decision","#sprint"], expectMin:65 },
+      { id:"it03_a2", type:"aligned", content:"Terraform IaC scanned with tfsec in CI/CD. No critical misconfigurations in the last 3 deployments. Checkov also passing on all CloudFormation templates.", tags:["#architecture"], expectMin:60 },
+      { id:"it03_m1", type:"misaligned", content:"We want to re-architect the core banking application from monolith to microservices during migration. This will make the cloud deployment cleaner.", tags:["#feature"], expectMax:30 },
+      { id:"it03_m2", type:"misaligned", content:"We brought in a new offshore subcontractor for the Tier-1 banking app migration without notifying the client. They start next week.", tags:["#decision"], expectMax:20 },
+      { id:"it03_e1", type:"edge", content:"Tier-1 banking app migration at risk — regulator NOC taking 6 weeks longer than expected, pushing WI-004 back by 6 weeks.", tags:["#concern","#blocker"] },
+    ]
+  },
+  "it_04_cybersecurity_infrastructure.pdf": {
+    label: "Cybersecurity Infrastructure", domain: "IT",
+    messages: [
+      { id:"it04_a1", type:"aligned", content:"EDR deployed to 100% of endpoints. Policy tuning complete with false positive rate below 1%. Threat hunting playbooks delivered to Agency SOC team.", tags:["#decision","#sprint"], expectMin:70 },
+      { id:"it04_a2", type:"aligned", content:"Monthly red team exercise: MTTD 47 minutes (target <1h), MTTR 3.5 hours (target <4h). SOC team responding well to simulated APT scenarios.", tags:["#architecture"], expectMin:65 },
+      { id:"it04_m1", type:"misaligned", content:"We want to subcontract the SOC analyst roles to a managed security service provider for 24/7 coverage without hiring additional staff.", tags:["#decision"], expectMax:20 },
+      { id:"it04_m2", type:"misaligned", content:"We plan to reuse the GovProtect agency-specific threat intelligence and detection rules in our commercial SOC offering for private clients.", tags:["#decision"], expectMax:15 },
+      { id:"it04_e1", type:"edge", content:"A zero-day in our SOAR platform was disclosed 60 days after go-live. Patch ready but needs 48-hour maintenance window.", tags:["#concern","#blocker"] },
+    ]
+  },
+  "it_05_healthcare_ehr.pdf": {
+    label: "Healthcare EHR", domain: "IT",
+    messages: [
+      { id:"it05_a1", type:"aligned", content:"HIPAA risk analysis complete with zero unresolved high risks. BAA signed with all subcontractors. AES-256 encryption and TLS 1.3 verified. PHI controls passed internal audit.", tags:["#decision","#architecture"], expectMin:70 },
+      { id:"it05_a2", type:"aligned", content:"FHIR R4 conformance tests passed for all 15 resource types. Lab results auto-populate within 3 minutes of lab release. Critical value alerts confirmed working in UAT.", tags:["#sprint"], expectMin:65 },
+      { id:"it05_m1", type:"misaligned", content:"We want to use MediCare's de-identified patient data to pre-train our general-purpose clinical NLP model we will sell to other hospital networks.", tags:["#decision"], expectMax:10 },
+      { id:"it05_m2", type:"misaligned", content:"To meet the deadline, we plan to load PHI before completing HIPAA risk analysis and before the BAA is signed with subcontractors.", tags:["#decision"], expectMax:10 },
+      { id:"it05_e1", type:"edge", content:"Genomics data management feature requested by two large hospitals. Should we scope it as a paid addition in Phase 2?", tags:["#feature","#concern"] },
+    ]
+  },
+  "ds_01_churn_prediction.pdf": {
+    label: "Churn Prediction Platform", domain: "DS",
+    messages: [
+      { id:"ds01_a1", type:"aligned", content:"Churn model AUC-ROC reached 0.89 on held-out test set. SHAP values available for top 100 features. Bias audit passed with no demographic discrimination detected.", tags:["#decision","#feature"], expectMin:70 },
+      { id:"ds01_a2", type:"aligned", content:"Prediction API live with p99 latency 142ms, well under 200ms SLA. Autoscaling tested to 500 RPS. API keys and rate limiting enforced.", tags:["#sprint"], expectMin:65 },
+      { id:"ds01_m1", type:"misaligned", content:"We plan to use TelecomPlus subscriber usage patterns and churn labels to improve our general-purpose telecom churn SaaS product sold to other carriers.", tags:["#decision"], expectMax:10 },
+      { id:"ds01_m2", type:"misaligned", content:"We are bringing in a freelance data scientist to help with model training. They will have full access to the subscriber dataset.", tags:["#decision"], expectMax:20 },
+      { id:"ds01_m3", type:"misaligned", content:"We want to add NLP sentiment analysis on customer call recordings to significantly improve the churn model accuracy.", tags:["#feature"], expectMax:35 },
+      { id:"ds01_e1", type:"edge", content:"DB access was only granted 8 business days after our written request — exceeding the 5-day SLA. We lost 3 days on WI-001.", tags:["#concern","#blocker"] },
+    ]
+  },
+  "ds_02_fraud_detection.pdf": {
+    label: "Fraud Detection System", domain: "DS",
+    messages: [
+      { id:"ds02_a1", type:"aligned", content:"Transaction scoring engine processing 52,000 TPS with p99 latency 38ms. Circuit breaker active. Zero data loss over 72-hour soak test.", tags:["#sprint","#decision"], expectMin:70 },
+      { id:"ds02_a2", type:"aligned", content:"PCI-DSS quarterly ASV scan complete. All cardholder data tokenised. HSM-based key management verified by QSA. Network segmentation between fraud engine and CHD environment confirmed.", tags:["#architecture"], expectMin:65 },
+      { id:"ds02_m1", type:"misaligned", content:"We want to expand scope to include AML transaction monitoring and SWIFT messaging compliance as part of the same platform delivery.", tags:["#feature"], expectMax:30 },
+      { id:"ds02_m2", type:"misaligned", content:"We plan to use PaySecure's labelled fraud transaction data to improve our generic fraud detection SaaS product.", tags:["#decision"], expectMax:10 },
+      { id:"ds02_e1", type:"edge", content:"Biometric authentication (fingerprint + face) for high-value transactions requested by client. Should we assess feasibility?", tags:["#feature","#concern"] },
+    ]
+  },
+  "ds_03_supply_chain_analytics.pdf": {
+    label: "Supply Chain Analytics", domain: "DS",
+    messages: [
+      { id:"ds03_a1", type:"aligned", content:"Demand forecasting model achieving MAPE 6.8% on all 3,000 SKUs. 13-week forecast horizon confirmed. Confidence intervals included. Seasonal decomposition validated.", tags:["#decision","#sprint"], expectMin:70 },
+      { id:"ds03_a2", type:"aligned", content:"Risk scores published for 100% of Tier-1 suppliers. Weekly refresh automated. Risk factors explained to procurement team.", tags:["#decision"], expectMin:65 },
+      { id:"ds03_m1", type:"misaligned", content:"We want to integrate physical IoT sensors from warehouse floors to improve real-time inventory accuracy.", tags:["#feature"], expectMax:30 },
+      { id:"ds03_m2", type:"misaligned", content:"We are planning to share GlobalLogix's supplier pricing data and contract terms with our research team to publish an industry benchmark report.", tags:["#decision"], expectMax:10 },
+      { id:"ds03_e1", type:"edge", content:"SAP access granted 8 business days after written request — exceeding the 5-day SLA. Lost 3 days on WI-001. Is the late delivery penalty applicable?", tags:["#concern"] },
+    ]
+  },
+  "ds_04_nlp_document_intelligence.pdf": {
+    label: "NLP Document Intelligence", domain: "DS",
+    messages: [
+      { id:"ds04_a1", type:"aligned", content:"Clause extraction F1 reached 0.93 on 20 clause types including liability cap, termination, and indemnity. Confidence scores output for all predictions.", tags:["#decision","#sprint"], expectMin:70 },
+      { id:"ds04_a2", type:"aligned", content:"Fine-tuned LLM suggests contract clauses that attorneys accept 74% of the time. Hallucination rate 1.3%. Full audit log of all AI suggestions is operational.", tags:["#feature","#decision"], expectMin:65 },
+      { id:"ds04_m1", type:"misaligned", content:"We want to add court document filing automation that submits pleadings directly to court e-filing systems.", tags:["#feature"], expectMax:25 },
+      { id:"ds04_m2", type:"misaligned", content:"We plan to use LegalEagle's contracts and legal strategies to fine-tune a general-purpose legal AI product we will sell to other law firms.", tags:["#decision"], expectMax:5 },
+      { id:"ds04_e1", type:"edge", content:"Client requested multi-language contract review for French and German contracts. Should we scope as Phase 2?", tags:["#feature","#concern"] },
+    ]
+  },
+  "ds_05_predictive_maintenance.pdf": {
+    label: "Predictive Maintenance IoT", domain: "DS",
+    messages: [
+      { id:"ds05_a1", type:"aligned", content:"IoT ingestion pipeline handling 500 streams at 1Hz. Edge pre-processing reduces bandwidth 63%. Data loss rate 0.003% over 30 days. Ready for Wave 2.", tags:["#decision","#sprint"], expectMin:70 },
+      { id:"ds05_a2", type:"aligned", content:"Failure prediction recall 92% at 72-hour advance notice. False alarm rate 2.1%, below 3% threshold. SHAP root cause attribution working.", tags:["#decision"], expectMin:70 },
+      { id:"ds05_m1", type:"misaligned", content:"We want to add SCADA write-back commands so the system automatically shuts down machines when failure is predicted, without human approval.", tags:["#feature"], expectMax:20 },
+      { id:"ds05_m2", type:"misaligned", content:"We plan to license the trained predictive models (calibrated on IndustrialOps sensor data) to their direct competitor FastManufacture Ltd.", tags:["#decision"], expectMax:10 },
+      { id:"ds05_m3", type:"misaligned", content:"For ICS security hardening we plan to subcontract WI-006 entirely to a third-party firm without notifying IndustrialOps.", tags:["#decision"], expectMax:15 },
+      { id:"ds05_e1", type:"edge", content:"Production line manager overrode a correctly-issued high-confidence failure alert. Machine broke down causing 8 hours unplanned downtime.", tags:["#concern"] },
+    ]
+  },
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const msgState = {};   // msgId → { el, checkbox, statusEl, checked }
+let running = false;
+let mainWindow = null;
+
+// ── Build tree ────────────────────────────────────────────────────────────────
+function buildTree() {
+  const tree = document.getElementById('tree');
+  tree.innerHTML = '';
+
+  for (const [pdfName, doc] of Object.entries(SCENARIOS)) {
+    const group = document.createElement('div');
+    group.className = 'doc-group';
+    group.dataset.pdf = pdfName;
+
+    const hdr = document.createElement('div');
+    hdr.className = 'doc-header';
+    hdr.innerHTML = `
+      <span class="doc-toggle">▼</span>
+      <label class="doc-check" onclick="event.stopPropagation()">
+        <input type="checkbox" data-doc="${pdfName}" onchange="toggleDoc(this)">
+      </label>
+      <span class="doc-label">${esc(doc.label)}</span>
+      <span class="doc-badge badge-${doc.domain.toLowerCase()}">${doc.domain}</span>
+      <span class="doc-progress" id="prog-${pdfName}">0/${doc.messages.length}</span>
+    `;
+
+    const list = document.createElement('div');
+    list.className = 'msg-list open';
+    list.id = `list-${pdfName}`;
+
+    for (const msg of doc.messages) {
+      const row = document.createElement('div');
+      row.className = 'msg-row';
+      row.id = `row-${msg.id}`;
+
+      const tagsHtml = (msg.tags||[]).map(t => `<span class="mtag">${esc(t)}</span>`).join('');
+      row.innerHTML = `
+        <input type="checkbox" data-msg="${msg.id}" data-pdf="${pdfName}" onchange="updateSelCount()">
+        <div class="msg-info">
+          <span class="msg-type type-${msg.type}">${msg.type}</span>
+          <div class="msg-text">${esc(msg.content)}</div>
+          <div class="msg-tags">${tagsHtml}</div>
+        </div>
+        <div class="msg-status" id="status-${msg.id}">
+          <span class="status-icon" id="icon-${msg.id}">○</span>
+        </div>
+      `;
+      list.appendChild(row);
+
+      const cb = row.querySelector('input[type=checkbox]');
+      msgState[msg.id] = { row, checkbox: cb, pdf: pdfName, msg };
+    }
+
+    hdr.addEventListener('click', () => {
+      const open = list.classList.toggle('open');
+      hdr.querySelector('.doc-toggle').textContent = open ? '▼' : '▶';
+    });
+
+    group.appendChild(hdr);
+    group.appendChild(list);
+    tree.appendChild(group);
+  }
+}
+
+function toggleDoc(docCheckbox) {
+  const pdfName = docCheckbox.dataset.doc;
+  const checked = docCheckbox.checked;
+  for (const [id, s] of Object.entries(msgState)) {
+    if (s.pdf === pdfName) s.checkbox.checked = checked;
+  }
+  updateSelCount();
+}
+
+function updateSelCount() {
+  const n = Object.values(msgState).filter(s => s.checkbox.checked).length;
+  document.getElementById('sel-count').textContent = n;
+}
+
+function selectAll(val) {
+  for (const s of Object.values(msgState)) s.checkbox.checked = val;
+  document.querySelectorAll('[data-doc]').forEach(cb => cb.checked = val);
+  updateSelCount();
+}
+
+function expandAll(val) {
+  document.querySelectorAll('.msg-list').forEach(el => el.classList.toggle('open', val));
+  document.querySelectorAll('.doc-toggle').forEach(el => el.textContent = val ? '▼' : '▶');
+}
+
+// ── Execution ─────────────────────────────────────────────────────────────────
+async function runSelected() {
+  if (running) return;
+  const selected = Object.entries(msgState).filter(([,s]) => s.checkbox.checked);
+  if (!selected.length) { logInfo('No scenarios selected.'); return; }
+
+  running = true;
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('run-status').textContent = 'Running…';
+  setLiveDot(true);
+  clearLog();
+
+  // Group by PDF
+  const byPdf = {};
+  for (const [id, s] of selected) {
+    if (!byPdf[s.pdf]) byPdf[s.pdf] = [];
+    byPdf[s.pdf].push({ id, ...s });
+  }
+
+  let totalRun = 0, totalPass = 0;
+
+  for (const [pdfName, entries] of Object.entries(byPdf)) {
+    const doc = SCENARIOS[pdfName];
+    logSection(`📂 ${doc.label} (${pdfName})`);
+
+    // Create project
+    logInfo(`Creating project from PDF…`);
+    setIconRunning(entries.map(e => e.id));
+    let pid;
+    try {
+      pid = await createProject(pdfName);
+      logSuccess(`Project created: ${pid.slice(0,8)}…`);
+      broadcastProject(pid, doc.label);
+    } catch(e) {
+      logError(`Failed to create project: ${e.message}`);
+      for (const e2 of entries) setIcon(e2.id, '✗', 'error');
+      continue;
+    }
+
+    // Send messages
+    for (const entry of entries) {
+      const { id, msg } = entry;
+      setIconRunning([id]);
+      logInfo(`Sending [${msg.type}]: ${msg.content.slice(0,70)}…`);
+      try {
+        const result = await sendChat(pid, msg.content, msg.tags || []);
+        const meta = result.assistant_message.metadata;
+        const score = meta.alignment_score;
+
+        const passed = checkExpectation(msg, score);
+        totalRun++;
+        if (passed !== false) totalPass++;
+
+        const scoreClass = score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
+        const icon = passed === true ? '✅' : passed === false ? '❌' : '✔';
+
+        setIconDone(id, icon, score, scoreClass);
+        updateDocProgress(pdfName);
+        logResult(msg, score, meta, passed);
+        await delay(1200);
+      } catch(e) {
+        logError(`Error: ${e.message}`);
+        setIcon(id, '✗', 'error');
+      }
+    }
+  }
+
+  logSection(`✅ Done — ${totalPass}/${totalRun} assertions passed`);
+  document.getElementById('run-status').textContent = `Done: ${totalPass}/${totalRun} passed`;
+  document.getElementById('run-btn').disabled = false;
+  setLiveDot(false);
+  running = false;
+}
+
+function checkExpectation(msg, score) {
+  if (msg.expectMin !== undefined && msg.expectMax !== undefined) return score >= msg.expectMin && score <= msg.expectMax;
+  if (msg.expectMin !== undefined) return score >= msg.expectMin;
+  if (msg.expectMax !== undefined) return score <= msg.expectMax;
+  return null;  // edge case — no assertion
+}
+
+async function createProject(pdfName) {
+  const doc = SCENARIOS[pdfName];
+  const fd = new FormData();
+  fd.append('name', doc.label);
+
+  // Try to fetch the real PDF from the backend first; fall back to text SoW
+  try {
+    const pdfResp = await fetch(`${API}/test-scenarios/pdfs/${pdfName}`);
+    if (pdfResp.ok) {
+      const blob = await pdfResp.blob();
+      fd.append('sow_pdf', blob, pdfName);
+      logInfo(`Using real PDF: ${pdfName}`);
+    } else {
+      throw new Error('PDF not available');
+    }
+  } catch (_) {
+    fd.append('sow_text', buildMinimalSoW(pdfName));
+    logInfo(`PDF not found — using synthetic SoW text (run python tests/generate_sows.py to enable PDF mode)`);
+  }
+
+  const resp = await fetch(`${API}/projects`, { method: 'POST', body: fd });
+  if (!resp.ok) throw new Error(await resp.text());
+  return (await resp.json()).project_id;
+}
+
+function buildMinimalSoW(pdfName) {
+  const doc = SCENARIOS[pdfName];
+  const aligned = doc.messages.filter(m => m.type === 'aligned').map(m => m.content).join(' ');
+  return `Project: ${doc.label}. Domain: ${doc.domain}. ` +
+    `Context from team discussions: ${aligned}. ` +
+    `Security requirements: SAST, VAPT, security audits required. ` +
+    `Legal: late delivery penalties, subcontracting clauses, IP ownership, indemnity. ` +
+    `Deliverables include MVP definition, work items with timelines, definition of done per feature, project closure criteria.`;
+}
+
+async function sendChat(pid, content, tags) {
+  const resp = await fetch(`${API}/projects/${pid}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ author_handle: 'scenario_runner', author_id: 'runner', content, tags }),
+  });
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+// ── Cross-tab sync ────────────────────────────────────────────────────────────
+function broadcastProject(pid, name) {
+  localStorage.setItem('scenario_active_project', JSON.stringify({ pid, name, ts: Date.now() }));
+  if (mainWindow && !mainWindow.closed) {
+    mainWindow.postMessage({ type: 'load_project', pid, name }, '*');
+  }
+}
+
+function openMain() {
+  mainWindow = window.open('/', '_blank');
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function setIconRunning(ids) {
+  for (const id of ids) {
+    const el = document.getElementById(`icon-${id}`);
+    if (el) el.innerHTML = '<span class="spin"></span>';
+  }
+}
+
+function setIconDone(id, icon, score, scoreClass) {
+  const statusEl = document.getElementById(`status-${id}`);
+  if (!statusEl) return;
+  statusEl.innerHTML = `
+    <span class="status-icon">${icon}</span>
+    <span class="score-pill ${scoreClass}">${score}</span>
+  `;
+}
+
+function setIcon(id, icon) {
+  const el = document.getElementById(`icon-${id}`);
+  if (el) el.innerHTML = icon;
+}
+
+function updateDocProgress(pdfName) {
+  const done = SCENARIOS[pdfName].messages.filter(m => {
+    const s = document.getElementById(`status-${m.id}`);
+    return s && !s.querySelector('.spin') && s.querySelector('.status-icon')?.textContent !== '○';
+  }).length;
+  const total = SCENARIOS[pdfName].messages.length;
+  const el = document.getElementById(`prog-${pdfName}`);
+  if (el) el.textContent = `${done}/${total}`;
+}
+
+function setLiveDot(on) {
+  document.getElementById('live-dot').classList.toggle('active', on);
+}
+
+// ── Log helpers ───────────────────────────────────────────────────────────────
+function logSection(text) {
+  const el = document.createElement('div');
+  el.className = 'log-section';
+  el.textContent = text;
+  appendLog(el);
+}
+
+function logInfo(text) { appendLogEntry('log-info', text); }
+function logSuccess(text) { appendLogEntry('log-success', text); }
+function logError(text) { appendLogEntry('log-error', text); }
+
+function logResult(msg, score, meta, passed) {
+  const cls = passed === true ? 'log-success' : passed === false ? 'log-warn' : 'log-info';
+  const scoreClass = score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
+
+  const inChips = (meta.in_scope||[]).slice(0,3).map(s => `<span class="chip in">${esc(s)}</span>`).join('');
+  const outChips = (meta.out_of_scope||[]).slice(0,3).map(s => `<span class="chip out">${esc(s)}</span>`).join('');
+  const devChips = (meta.deviations||[]).slice(0,2).map(s => `<span class="chip dev">⚠ ${esc(s)}</span>`).join('');
+  const recChips = (meta.recommendations||[]).slice(0,2).map(s => `<span class="chip rec">${esc(s)}</span>`).join('');
+
+  const assertion = passed === true ? '✅ assertion passed' : passed === false ? '❌ assertion failed' : '— no assertion';
+  const expectHint = msg.expectMin !== undefined ? `(expected ≥${msg.expectMin})` :
+                     msg.expectMax !== undefined ? `(expected ≤${msg.expectMax})` : '';
+
+  const el = document.createElement('div');
+  el.className = `log-entry ${cls}`;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span class="msg-type type-${msg.type}" style="font-size:9px;padding:1px 5px;border-radius:3px;text-transform:uppercase;font-weight:700">${msg.type}</span>
+      <span class="score-pill ${scoreClass}" style="font-size:10px;padding:2px 7px;border-radius:8px;font-weight:700">score: ${score}</span>
+      <span style="font-size:10px;color:var(--muted)">${assertion} ${expectHint}</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${esc(msg.content.slice(0,120))}…</div>
+    ${inChips || outChips || devChips || recChips ? `
+    <div class="log-chips">
+      ${inChips}${outChips}${devChips}${recChips}
+    </div>` : ''}
+    <div style="font-size:10px;color:var(--muted);margin-top:3px">
+      ${meta.user_plane_nodes_created?.length || 0} KG nodes · ${meta.cross_plane_edges_created?.length || 0} cross-plane edges
+    </div>
+  `;
+  appendLog(el);
+}
+
+function appendLogEntry(cls, text) {
+  const el = document.createElement('div');
+  el.className = `log-entry ${cls}`;
+  el.textContent = text;
+  appendLog(el);
+}
+
+function appendLog(el) {
+  const log = document.getElementById('log');
+  if (log.children.length === 1 && log.children[0].tagName === 'DIV' && log.children[0].style.textAlign) {
+    log.innerHTML = '';
+  }
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log').innerHTML = '<div style="color:var(--muted);text-align:center;padding:40px 0">Log cleared.</div>';
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+buildTree();
+updateSelCount();
+</script>
+</body>
+</html>

@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Advisor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.29.2/cytoscape.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #232635;
+    --border: #2e3148;
+    --text: #e2e4f0;
+    --text-muted: #7c7f9a;
+    --blue: #4e79a7;
+    --green: #59a14f;
+    --orange: #f28e2b;
+    --red: #e15759;
+    --purple: #b07aa1;
+    --teal: #76b7b2;
+    --yellow: #edc948;
+    --accent: #6c8ebf;
+    --accent-dim: #3a4f73;
+  }
+
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
+
+  /* ── Header ── */
+  #header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #header h1 { font-size: 15px; font-weight: 600; color: var(--accent); letter-spacing: .3px; }
+  #project-name { font-size: 13px; color: var(--text-muted); padding: 4px 10px; background: var(--surface2); border-radius: 4px; border: 1px solid var(--border); }
+  #header .spacer { flex: 1; }
+  button { cursor: pointer; border: none; border-radius: 4px; font-size: 12px; padding: 5px 12px; font-family: inherit; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #7a9fd4; }
+  .btn-ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+  .btn-sm { padding: 3px 8px; font-size: 11px; }
+
+  /* ── Layout ── */
+  #app { display: grid; grid-template-columns: 340px 1fr 300px; flex: 1; overflow: hidden; }
+  .panel { display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
+  .panel:last-child { border-right: none; }
+  .panel-header { padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-muted); }
+  .panel-header .controls { margin-left: auto; display: flex; gap: 4px; }
+
+  /* ── KG Panel ── */
+  #cy { flex: 1; background: var(--bg); }
+  #node-detail { padding: 10px 12px; background: var(--surface2); border-top: 1px solid var(--border); font-size: 11px; line-height: 1.6; max-height: 140px; overflow-y: auto; flex-shrink: 0; display: none; }
+  #node-detail.visible { display: block; }
+  #node-detail .node-label { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+  #node-detail .node-type { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-bottom: 6px; text-transform: uppercase; }
+  #node-detail .node-desc { color: var(--text-muted); }
+  #node-detail .node-src { margin-top: 4px; color: var(--text-muted); font-style: italic; border-left: 2px solid var(--border); padding-left: 6px; }
+
+  /* ── Chat Panel ── */
+  #chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .message { display: flex; flex-direction: column; gap: 4px; }
+  .message-header { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .msg-handle { font-weight: 600; color: var(--accent); }
+  .msg-time { color: var(--text-muted); }
+  .msg-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; background: var(--accent-dim); color: var(--accent); }
+  .message-body { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; line-height: 1.6; white-space: pre-wrap; }
+  .message.user .message-body { border-left: 3px solid var(--accent); }
+  .message.assistant .message-body { border-left: 3px solid var(--green); background: var(--surface2); }
+  .score-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .score-high { background: #1a3d1a; color: var(--green); }
+  .score-mid { background: #3d3010; color: var(--yellow); }
+  .score-low { background: #3d1010; color: var(--red); }
+  .message-meta { font-size: 10px; color: var(--text-muted); display: flex; gap: 10px; flex-wrap: wrap; padding: 2px 0; }
+  .meta-item { display: flex; gap: 4px; }
+  .meta-label { text-transform: uppercase; letter-spacing: .5px; opacity: .7; }
+  .meta-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-size: 10px; }
+  .chip.out { border-color: var(--red); color: var(--red); }
+  .chip.in { border-color: var(--green); color: var(--green); }
+  .chip.dev { border-color: var(--yellow); color: var(--yellow); }
+
+  /* suggested tags on assistant message */
+  .suggested-tags-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .suggested-tags-bar span { font-size: 10px; color: var(--text-muted); }
+  .stag { cursor: pointer; padding: 1px 6px; border-radius: 10px; font-size: 10px; background: var(--surface2); border: 1px solid var(--accent-dim); color: var(--accent); }
+  .stag:hover { background: var(--accent-dim); }
+
+  /* ── Chat Input ── */
+  #chat-input-area { padding: 10px 12px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+  #author-row { display: flex; gap: 8px; margin-bottom: 6px; align-items: center; }
+  #author-row label { font-size: 11px; color: var(--text-muted); }
+  #handle-input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 4px 8px; font-size: 12px; font-family: inherit; width: 120px; }
+  #msg-input { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 8px; font-size: 13px; font-family: inherit; resize: none; min-height: 60px; max-height: 120px; line-height: 1.5; }
+  #msg-input:focus, #handle-input:focus { outline: none; border-color: var(--accent); }
+  #tag-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .tag-toggle { padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; }
+  .tag-toggle.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  #send-row { display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end; align-items: center; }
+  #suggest-btn { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+  #suggest-btn:hover { color: var(--text); }
+
+  /* ── Rules Panel ── */
+  #rules-content { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  #coverage-bar-wrap { padding: 10px 12px; background: var(--surface2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .coverage-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; }
+  .coverage-label span:last-child { font-weight: 600; color: var(--green); }
+  .bar-bg { background: var(--border); border-radius: 4px; height: 6px; }
+  .bar-fill { height: 6px; border-radius: 4px; background: var(--green); transition: width .4s; }
+  .rule-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; padding: 8px 10px; }
+  .rule-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .rule-status { font-size: 13px; }
+  .rule-name { font-weight: 600; font-size: 12px; flex: 1; }
+  .rule-when { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+  .rule-then { font-size: 11px; color: var(--text-muted); font-style: italic; }
+  .rule-src { font-size: 10px; color: var(--text-muted); border-left: 2px solid var(--border); padding-left: 5px; margin-top: 4px; }
+  .deviation-banner { background: #2a1a00; border: 1px solid var(--orange); border-radius: 4px; padding: 6px 10px; font-size: 11px; color: var(--orange); }
+
+  /* ── Modal ── */
+  #modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  #modal-overlay.hidden { display: none; }
+  #modal { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; width: 560px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column; gap: 14px; }
+  #modal h2 { font-size: 15px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+  .field input, .field textarea { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 8px; font-size: 13px; font-family: inherit; }
+  .field textarea { min-height: 200px; resize: vertical; line-height: 1.5; }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+  .modal-footer { display: flex; gap: 8px; justify-content: flex-end; }
+  #project-list { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+  .project-item { padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  .project-item:hover { border-color: var(--accent); }
+  .project-item .pname { font-weight: 600; }
+  .project-item .pdate { font-size: 11px; color: var(--text-muted); }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; font-size: 12px; z-index: 200; opacity: 0; transition: opacity .3s; pointer-events: none; max-width: 320px; }
+  #toast.show { opacity: 1; }
+  #toast.error { border-color: var(--red); color: var(--red); }
+
+  /* ── Loading ── */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-indicator { display: none; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
+  #loading-indicator.show { display: flex; }
+
+  /* PDF upload */
+  .upload-divider { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: var(--text-muted); font-size: 11px; }
+  .upload-divider::before, .upload-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .pdf-drop-zone { border: 2px dashed var(--border); border-radius: 6px; padding: 16px; text-align: center; cursor: pointer; color: var(--text-muted); font-size: 12px; transition: border-color .2s, background .2s; }
+  .pdf-drop-zone:hover, .pdf-drop-zone.drag-over { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
+  .pdf-drop-zone.has-file { border-color: var(--green); background: #1a3d1a22; color: var(--green); }
+  .pdf-drop-zone input[type=file] { display: none; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <h1>Project Advisor</h1>
+  <span id="project-name">No project selected</span>
+  <div id="loading-indicator"><div class="spinner"></div> <span id="loading-text">Processing…</span></div>
+  <div class="spacer"></div>
+  <button class="btn-ghost btn-sm" onclick="openModal('select')">Switch Project</button>
+  <button class="btn-primary btn-sm" onclick="openModal('create')">+ New Project</button>
+  <a href="/scenarios.html" target="_blank" style="font-size:11px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;text-decoration:none;white-space:nowrap" title="Open Scenario Runner">⚗ Scenarios</a>
+</div>
+
+<!-- Main 3-panel layout -->
+<div id="app">
+
+  <!-- Left: KG Viewer -->
+  <div class="panel" id="kg-panel">
+    <div class="panel-header">
+      Knowledge Graph
+      <div class="controls">
+        <button class="btn-ghost btn-sm" onclick="setPlane('origin')" id="plane-origin">Origin</button>
+        <button class="btn-ghost btn-sm" onclick="setPlane('user')" id="plane-user">User</button>
+        <button class="btn-ghost btn-sm active" onclick="setPlane('both')" id="plane-both">Both</button>
+      </div>
+    </div>
+    <div id="cy"></div>
+    <div id="node-detail"></div>
+  </div>
+
+  <!-- Center: Chat -->
+  <div class="panel" id="chat-panel">
+    <div class="panel-header">
+      Team Chat
+      <div class="controls" style="gap:6px">
+        <select id="filter-tag" onchange="filterChat()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 6px;font-size:11px;font-family:inherit;">
+          <option value="">All tags</option>
+          <option value="#decision">#decision</option>
+          <option value="#feature">#feature</option>
+          <option value="#concern">#concern</option>
+          <option value="#sprint">#sprint</option>
+          <option value="#architecture">#architecture</option>
+          <option value="#blocker">#blocker</option>
+          <option value="#out-of-scope">#out-of-scope</option>
+        </select>
+      </div>
+    </div>
+    <div id="chat-messages"><div style="color:var(--text-muted);font-size:12px;text-align:center;padding:40px 0">Select or create a project to begin.</div></div>
+    <div id="chat-input-area">
+      <div id="author-row">
+        <label>Your handle:</label>
+        <input id="handle-input" type="text" placeholder="@you" value="me">
+      </div>
+      <textarea id="msg-input" placeholder="Share an idea, sprint plan, or decision…" onkeydown="handleKey(event)"></textarea>
+      <div id="tag-row">
+        <span style="font-size:11px;color:var(--text-muted)">Tags:</span>
+        <span class="tag-toggle" data-tag="#decision" onclick="toggleTag(this)">#decision</span>
+        <span class="tag-toggle" data-tag="#feature" onclick="toggleTag(this)">#feature</span>
+        <span class="tag-toggle" data-tag="#concern" onclick="toggleTag(this)">#concern</span>
+        <span class="tag-toggle" data-tag="#sprint" onclick="toggleTag(this)">#sprint</span>
+        <span class="tag-toggle" data-tag="#architecture" onclick="toggleTag(this)">#architecture</span>
+        <span class="tag-toggle" data-tag="#blocker" onclick="toggleTag(this)">#blocker</span>
+        <span class="tag-toggle" data-tag="#out-of-scope" onclick="toggleTag(this)">#out-of-scope</span>
+      </div>
+      <div id="send-row">
+        <button id="suggest-btn" class="btn-ghost btn-sm" onclick="doSuggestTags()">Suggest tags</button>
+        <button class="btn-primary" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Rules + Coverage -->
+  <div class="panel" id="rules-panel">
+    <div class="panel-header">Rules &amp; Coverage</div>
+    <div id="coverage-bar-wrap">
+      <div class="coverage-label"><span>Goal coverage</span><span id="coverage-pct">—</span></div>
+      <div class="bar-bg"><div class="bar-fill" id="coverage-fill" style="width:0%"></div></div>
+    </div>
+    <div id="rules-content"><div style="color:var(--text-muted);font-size:12px;padding:20px 0;text-align:center">No rules loaded.</div></div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay" class="hidden">
+  <div id="modal">
+    <!-- content injected by JS -->
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const API = '';  // same origin
+let state = {
+  projectId: null,
+  projectName: null,
+  plane: 'both',
+  allMessages: [],
+};
+let cy = null;
+
+// ── Cytoscape setup ──────────────────────────────────────────────────────────
+
+const TYPE_COLOR = {
+  // Origin
+  goal: '#4e79a7', feature: '#59a14f', component: '#f28e2b',
+  constraint: '#e15759', actor: '#b07aa1', milestone: '#edc948',
+  // User
+  decision: '#76b7b2', work_item: '#59a14f', proposed_feature: '#f28e2b',
+  concern: '#e15759', discussion_topic: '#b07aa1', blocker: '#c0392b',
+};
+const TYPE_SHAPE = {
+  goal: 'ellipse', feature: 'rectangle', component: 'barrel',
+  constraint: 'diamond', actor: 'hexagon', milestone: 'star',
+  decision: 'ellipse', work_item: 'rectangle', proposed_feature: 'round-rectangle',
+  concern: 'diamond', discussion_topic: 'hexagon', blocker: 'octagon',
+};
+
+function initCy() {
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    style: [
+      {
+        selector: 'node',
+        style: {
+          label: 'data(label)',
+          'font-size': '10px',
+          color: '#e2e4f0',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-wrap': 'wrap',
+          'text-max-width': '80px',
+          width: 55,
+          height: 55,
+          'background-color': (ele) => TYPE_COLOR[ele.data('type')] || '#666',
+          shape: (ele) => TYPE_SHAPE[ele.data('type')] || 'ellipse',
+          'border-width': (ele) => ele.data('plane') === 'user' ? 2 : 0,
+          'border-color': '#e2e4f0',
+          'border-style': (ele) => ele.data('plane') === 'user' ? 'dashed' : 'solid',
+          'background-opacity': (ele) => ele.data('plane') === 'user' ? 0.55 : 1,
+        }
+      },
+      {
+        selector: 'node[coverage_status="covered"]',
+        style: { 'border-width': 3, 'border-color': '#59a14f', 'border-style': 'solid' }
+      },
+      {
+        selector: 'edge',
+        style: {
+          width: 1.5,
+          'line-color': '#2e3148',
+          'target-arrow-color': '#2e3148',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          label: 'data(relation)',
+          'font-size': '8px',
+          color: '#7c7f9a',
+          'text-rotation': 'autorotate',
+          'line-style': (ele) => ele.data('plane') === 'cross' ? 'dashed' : 'solid',
+          'line-color': (ele) => ele.data('plane') === 'cross' ? '#4e79a7' : (ele.data('plane') === 'user' ? '#3a4f73' : '#2e3148'),
+          'target-arrow-color': (ele) => ele.data('plane') === 'cross' ? '#4e79a7' : '#2e3148',
+        }
+      },
+      {
+        selector: ':selected',
+        style: { 'border-width': 3, 'border-color': '#fff', 'border-style': 'solid' }
+      }
+    ],
+    layout: { name: 'cose', animate: false, randomize: false, nodeRepulsion: 8000, idealEdgeLength: 120 },
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
+  });
+
+  cy.on('tap', 'node', (evt) => {
+    const d = evt.target.data();
+    const detail = document.getElementById('node-detail');
+    detail.classList.add('visible');
+    const color = TYPE_COLOR[d.type] || '#666';
+    const src = d.source ? (d.source.ref || '') : '';
+    detail.innerHTML = `
+      <div class="node-label">${esc(d.label)}</div>
+      <span class="node-type" style="background:${color}33;color:${color}">${esc(d.type)} · ${esc(d.plane)}</span>
+      <div class="node-desc">${esc(d.description || '')}</div>
+      ${src ? `<div class="node-src">${esc(src.slice(0, 200))}</div>` : ''}
+    `;
+  });
+
+  cy.on('tap', (evt) => {
+    if (evt.target === cy) document.getElementById('node-detail').classList.remove('visible');
+  });
+}
+
+function reLayout() {
+  if (!cy) return;
+  cy.layout({ name: 'cose', animate: true, animationDuration: 500, randomize: false, nodeRepulsion: 8000, idealEdgeLength: 120 }).run();
+}
+
+async function loadKG() {
+  if (!state.projectId) return;
+  const param = state.plane !== 'both' ? `?plane=${state.plane}` : '';
+  const data = await apiFetch(`/projects/${state.projectId}/kg${param}`);
+  if (!cy) initCy();
+  cy.elements().remove();
+  cy.add(data.elements || []);
+  reLayout();
+  updateCoverage();
+}
+
+function setPlane(plane) {
+  state.plane = plane;
+  document.querySelectorAll('#kg-panel .controls button').forEach(b => b.classList.remove('active'));
+  document.getElementById(`plane-${plane}`).classList.add('active');
+  loadKG();
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+
+function renderMessages(messages) {
+  const container = document.getElementById('chat-messages');
+  if (!messages.length) {
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:40px 0">No messages yet. Start a conversation.</div>';
+    return;
+  }
+  container.innerHTML = messages.map(m => renderMessage(m)).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderMessage(m) {
+  const time = m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+  const handle = m.author ? `<span class="msg-handle">@${esc(m.author.handle)}</span>` : `<span class="msg-handle">advisor</span>`;
+  const tags = (m.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+
+  let metaHtml = '';
+  let suggestedTagsHtml = '';
+  let scoreBadge = '';
+
+  if (m.role === 'assistant' && m.metadata) {
+    const md = m.metadata;
+    const score = md.alignment_score || 0;
+    const cls = score >= 70 ? 'score-high' : score >= 40 ? 'score-mid' : 'score-low';
+    scoreBadge = `<span class="score-badge ${cls}">⬡ ${score}</span>`;
+
+    const inChips = (md.in_scope || []).map(s => `<span class="chip in">${esc(s)}</span>`).join('');
+    const outChips = (md.out_of_scope || []).map(s => `<span class="chip out">${esc(s)}</span>`).join('');
+    const devChips = (md.deviations || []).map(s => `<span class="chip dev">⚠ ${esc(s)}</span>`).join('');
+    const recHtml = (md.recommendations || []).map(r => `<span class="chip">${esc(r)}</span>`).join('');
+
+    if (inChips || outChips || devChips || recHtml) {
+      metaHtml = `<div class="message-meta">
+        ${inChips ? `<div class="meta-item"><span class="meta-label">in scope</span><div class="meta-chips">${inChips}</div></div>` : ''}
+        ${outChips ? `<div class="meta-item"><span class="meta-label">out of scope</span><div class="meta-chips">${outChips}</div></div>` : ''}
+        ${devChips ? `<div class="meta-item"><span class="meta-label">deviations</span><div class="meta-chips">${devChips}</div></div>` : ''}
+        ${recHtml ? `<div class="meta-item"><span class="meta-label">recommend</span><div class="meta-chips">${recHtml}</div></div>` : ''}
+      </div>`;
+    }
+
+    if (md.suggested_tags && md.suggested_tags.length) {
+      const stags = md.suggested_tags.map(t =>
+        `<span class="stag" onclick="applyTag('${esc(t)}', '${esc(m.message_id)}')">${esc(t)}</span>`
+      ).join('');
+      suggestedTagsHtml = `<div class="suggested-tags-bar"><span>Suggested tags (click to apply):</span>${stags}</div>`;
+    }
+  }
+
+  return `
+    <div class="message ${m.role}" data-id="${esc(m.message_id)}">
+      <div class="message-header">
+        ${handle}
+        <span class="msg-time">${time}</span>
+        ${scoreBadge}
+        <div class="msg-tags">${tags}</div>
+      </div>
+      <div class="message-body">${esc(m.content)}</div>
+      ${metaHtml}
+      ${suggestedTagsHtml}
+    </div>
+  `;
+}
+
+function applyTag(tag, msgId) {
+  // Apply a suggested tag to the previous user message (the one before this assistant msg)
+  const msgs = state.allMessages;
+  const idx = msgs.findIndex(m => m.message_id === msgId);
+  // The user message is at idx-1
+  const targetIdx = idx > 0 && msgs[idx-1].role === 'user' ? idx - 1 : -1;
+  if (targetIdx < 0) return;
+  const userMsg = msgs[targetIdx];
+  if (!userMsg.tags.includes(tag)) {
+    userMsg.tags.push(tag);
+    apiFetch(`/projects/${state.projectId}/chat/${userMsg.message_id}/tags`, 'PATCH', { tags: userMsg.tags });
+  }
+  renderMessages(state.allMessages);
+}
+
+async function filterChat() {
+  const tag = document.getElementById('filter-tag').value;
+  if (!state.projectId) return;
+  const url = tag ? `/projects/${state.projectId}/chat/history?tag=${encodeURIComponent(tag)}` : `/projects/${state.projectId}/chat/history`;
+  const msgs = await apiFetch(url);
+  renderMessages(msgs);
+}
+
+async function sendMessage() {
+  const content = document.getElementById('msg-input').value.trim();
+  const handle = document.getElementById('handle-input').value.trim() || 'anonymous';
+  if (!content || !state.projectId) return;
+
+  const activeTags = [...document.querySelectorAll('.tag-toggle.active')].map(el => el.dataset.tag);
+
+  setLoading(true, 'Analyzing…');
+  try {
+    const result = await apiFetch(`/projects/${state.projectId}/chat`, 'POST', {
+      author_handle: handle,
+      author_id: handle,
+      content,
+      tags: activeTags,
+    });
+    state.allMessages.push(result.user_message, result.assistant_message);
+    renderMessages(state.allMessages);
+    document.getElementById('msg-input').value = '';
+    // Reset tag toggles
+    document.querySelectorAll('.tag-toggle.active').forEach(el => el.classList.remove('active'));
+    // Refresh KG and rules
+    await Promise.all([loadKG(), loadRules()]);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function doSuggestTags() {
+  const content = document.getElementById('msg-input').value.trim();
+  if (!content || !state.projectId) return;
+  setLoading(true, 'Suggesting tags…');
+  try {
+    const result = await apiFetch(`/projects/${state.projectId}/chat/suggest-tags`, 'POST', { message: content });
+    const tags = result.suggested_tags || [];
+    document.querySelectorAll('.tag-toggle').forEach(el => {
+      if (tags.includes(el.dataset.tag)) el.classList.add('active');
+    });
+    if (tags.length) toast(`Suggested: ${tags.join(' ')}`);
+    else toast('No tag suggestions for this message.');
+  } finally {
+    setLoading(false);
+  }
+}
+
+function toggleTag(el) { el.classList.toggle('active'); }
+
+function handleKey(e) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendMessage();
+}
+
+// ── Rules ─────────────────────────────────────────────────────────────────────
+
+async function loadRules() {
+  if (!state.projectId) return;
+  const rules = await apiFetch(`/projects/${state.projectId}/rules`);
+  renderRules(rules);
+  updateCoverage();
+}
+
+function renderRules(rules) {
+  const container = document.getElementById('rules-content');
+  if (!rules.length) { container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:20px">No rules.</div>'; return; }
+
+  const violations = rules.filter(r => r.violation_status === 'violated');
+  const atRisk = rules.filter(r => r.violation_status === 'at_risk');
+
+  let html = '';
+  if (violations.length || atRisk.length) {
+    html += `<div class="deviation-banner">⚠ ${violations.length} violated · ${atRisk.length} at risk</div>`;
+  }
+
+  const statusIcon = { ok: '✓', at_risk: '⚠', violated: '✗' };
+  const statusColor = { ok: 'var(--green)', at_risk: 'var(--yellow)', violated: 'var(--red)' };
+
+  for (const r of rules) {
+    const icon = statusIcon[r.violation_status] || '?';
+    const color = statusColor[r.violation_status] || 'var(--text-muted)';
+    html += `
+      <div class="rule-card">
+        <div class="rule-header">
+          <span class="rule-status" style="color:${color}">${icon}</span>
+          <span class="rule-name">${esc(r.name)}</span>
+          <span style="font-size:10px;color:var(--text-muted)">p${r.salience}</span>
+        </div>
+        <div class="rule-when"><b>When:</b> ${esc(r.when)}</div>
+        <div class="rule-then"><b>Then:</b> ${esc(r.then)}</div>
+        ${r.sow_excerpt ? `<div class="rule-src">${esc(r.sow_excerpt.slice(0,120))}</div>` : ''}
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+async function updateCoverage() {
+  if (!state.projectId) return;
+  const cov = await apiFetch(`/projects/${state.projectId}/kg/coverage`);
+  const pct = cov.percentage || 0;
+  document.getElementById('coverage-pct').textContent = `${pct}%`;
+  document.getElementById('coverage-fill').style.width = `${pct}%`;
+}
+
+// ── Project selection / creation ──────────────────────────────────────────────
+
+async function loadProject(pid, name) {
+  state.projectId = pid;
+  state.projectName = name;
+  document.getElementById('project-name').textContent = name;
+  closeModal();
+  setLoading(true, 'Loading project…');
+  try {
+    const [msgs] = await Promise.all([
+      apiFetch(`/projects/${pid}/chat/history`),
+      loadKG(),
+      loadRules(),
+    ]);
+    state.allMessages = msgs;
+    renderMessages(msgs);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function createProject(formData) {
+  setLoading(true, 'Initializing project — extracting KG and rules (may take ~30s)…');
+  try {
+    const res = await fetch('/projects', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error(await res.text());
+    const result = await res.json();
+    await loadProject(result.project_id, result.name);
+    toast(`Project "${result.name}" created.`);
+  } catch(e) {
+    toast(`Failed to create project: ${e.message}`, true);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+
+async function openModal(mode) {
+  const overlay = document.getElementById('modal-overlay');
+  const modal = document.getElementById('modal');
+  overlay.classList.remove('hidden');
+
+  if (mode === 'create') {
+    modal.innerHTML = `
+      <h2>New Project</h2>
+      <div class="field">
+        <label>Project Name</label>
+        <input id="new-project-name" type="text" placeholder="My Project">
+      </div>
+      <div class="field">
+        <label>Statement of Work — paste text</label>
+        <textarea id="new-sow" placeholder="Paste your SoW here — goals, features, constraints, actors, milestones…"></textarea>
+        <div class="upload-divider">or upload a PDF</div>
+        <div class="pdf-drop-zone" id="pdf-drop" onclick="document.getElementById('sow-pdf').click()"
+             ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="onPdfDrop(event)">
+          <input type="file" id="sow-pdf" accept=".pdf" onchange="onPdfSelect(this)">
+          <span id="pdf-label">📄 Click or drag a PDF here</span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" onclick="submitCreate()">Initialize Project</button>
+      </div>
+    `;
+    document.getElementById('new-project-name').focus();
+  } else {
+    const projects = await apiFetch('/projects');
+    const items = projects.length
+      ? projects.map(p => `<div class="project-item" onclick="loadProject('${esc(p.project_id)}','${esc(p.name)}')">
+          <span class="pname">${esc(p.name)}</span>
+          <span class="pdate">${new Date(p.created_at).toLocaleDateString()}</span>
+        </div>`).join('')
+      : '<div style="color:var(--text-muted);font-size:12px;padding:12px 0">No projects yet.</div>';
+    modal.innerHTML = `
+      <h2>Select Project</h2>
+      <div id="project-list">${items}</div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeModal()">Cancel</button>
+      </div>
+    `;
+  }
+}
+
+function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
+
+function onPdfSelect(input) {
+  const file = input.files[0];
+  const zone = document.getElementById('pdf-drop');
+  const label = document.getElementById('pdf-label');
+  if (file) {
+    zone.classList.add('has-file');
+    label.textContent = `✓ ${file.name}`;
+  } else {
+    zone.classList.remove('has-file');
+    label.textContent = '📄 Click or drag a PDF here';
+  }
+}
+
+function onPdfDrop(event) {
+  event.preventDefault();
+  const zone = document.getElementById('pdf-drop');
+  zone.classList.remove('drag-over');
+  const file = event.dataTransfer.files[0];
+  if (!file || !file.name.endsWith('.pdf')) { toast('Please drop a PDF file.', true); return; }
+  const input = document.getElementById('sow-pdf');
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+  onPdfSelect(input);
+}
+
+function submitCreate() {
+  const name = document.getElementById('new-project-name').value.trim();
+  const sow = document.getElementById('new-sow').value.trim();
+  const pdfInput = document.getElementById('sow-pdf');
+  const pdfFile = pdfInput && pdfInput.files[0];
+
+  if (!name) { toast('Project name is required.', true); return; }
+  if (!sow && !pdfFile) { toast('Provide a SoW — either paste text or upload a PDF.', true); return; }
+
+  const formData = new FormData();
+  formData.append('name', name);
+  if (pdfFile) {
+    formData.append('sow_pdf', pdfFile);
+  } else {
+    formData.append('sow_text', sow);
+  }
+  closeModal();
+  createProject(formData);
+}
+
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+async function apiFetch(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(API + path, opts);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = isError ? 'show error' : 'show';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show', 'error'), 3500);
+}
+
+function setLoading(on, text = 'Processing…') {
+  const el = document.getElementById('loading-indicator');
+  document.getElementById('loading-text').textContent = text;
+  el.className = on ? 'show' : '';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+initCy();
+
+// Auto-load project broadcast from Scenario Runner tab
+window.addEventListener('storage', (e) => {
+  if (e.key !== 'scenario_active_project' || !e.newValue) return;
+  try {
+    const { pid, name } = JSON.parse(e.newValue);
+    if (pid && pid !== state.projectId) {
+      closeModal();
+      loadProject(pid, name || 'Scenario Project');
+      toast(`Scenario runner loaded: ${name}`);
+    }
+  } catch (_) {}
+});
+
+// Also handle postMessage from same-origin Scenario Runner window
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin) return;
+  if (e.data?.type === 'load_project' && e.data.pid) {
+    closeModal();
+    loadProject(e.data.pid, e.data.name || 'Scenario Project');
+    toast(`Scenario runner loaded: ${e.data.name}`);
+  }
+});
+
+// Auto-open project selector on load
+window.addEventListener('load', async () => {
+  // If a scenario runner preloaded a project via localStorage, use that first
+  const stored = localStorage.getItem('scenario_active_project');
+  if (stored) {
+    try {
+      const { pid, name, ts } = JSON.parse(stored);
+      if (pid && (Date.now() - ts) < 30000) {
+        await loadProject(pid, name || 'Scenario Project');
+        return;
+      }
+    } catch (_) {}
+  }
+  const projects = await apiFetch('/projects').catch(() => []);
+  if (projects.length === 0) openModal('create');
+  else openModal('select');
+});
+</script>
+</body>
+</html>
