@@ -120,7 +120,19 @@ async def lifespan(_app: FastAPI):
             print(f"[janitor] {jr.summary()}")
     except Exception as e:
         print(f"[janitor] startup run skipped: {e}")
+    # Start the Hermes proactive job scheduler.
+    try:
+        from proactive.scheduler import start as _sched_start
+        _sched_start()
+    except Exception as e:
+        print(f"[scheduler] startup failed: {e}")
     yield
+    # Shutdown
+    try:
+        from proactive.scheduler import stop as _sched_stop
+        _sched_stop()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="KnowledgeMind", lifespan=lifespan)
@@ -389,6 +401,56 @@ def set_config_api(upd: ConfigUpdate) -> dict:
         for key, value in fields.items():  # keeping the demo db_path override
             setattr(cfg, key, value)
     return {"ok": True, "saved": list(fields.keys())}
+
+
+# ---------------------------------------------------------------------------
+# Nudges (Hermes proactive runtime)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/nudges")
+def get_nudges(limit: int = 20, undismissed: bool = True) -> dict:
+    """Return recent proactive nudges from the outbox."""
+    from proactive.outbox import list_nudges
+    try:
+        conn = get_db_connection(get_config().db_path)
+        nudges = list_nudges(conn, limit=limit, undismissed_only=undismissed)
+        conn.close()
+        return {"nudges": nudges}
+    except Exception as e:
+        return JSONResponse({"detail": str(e)}, status_code=500)
+
+
+@app.post("/api/nudges/{nudge_id}/dismiss")
+def dismiss_nudge(nudge_id: int) -> dict:
+    """Mark a nudge as dismissed."""
+    from proactive.outbox import dismiss_nudge as _dismiss
+    try:
+        conn = get_db_connection(get_config().db_path)
+        found = _dismiss(conn, nudge_id)
+        conn.close()
+        return {"ok": found, "id": nudge_id}
+    except Exception as e:
+        return JSONResponse({"detail": str(e)}, status_code=500)
+
+
+@app.post("/api/nudges/run/{job_name}")
+def run_nudge_job(job_name: str) -> dict:
+    """Manually trigger a Hermes job by name."""
+    from proactive.loader import load_jobs
+    from proactive.runner import run_job
+    jobs = {j["name"]: j for j in load_jobs()}
+    if job_name not in jobs:
+        return JSONResponse(
+            {"detail": f"Unknown job '{job_name}'. Available: {list(jobs)}"},
+            status_code=404,
+        )
+    try:
+        nudge = run_job(jobs[job_name])
+        if nudge is None:
+            return {"surfaced": False, "message": "skill decided to stay silent"}
+        return {"surfaced": True, "nudge": {k: v for k, v in nudge.items() if k != "signals"}}
+    except Exception as e:
+        return JSONResponse({"detail": str(e)}, status_code=500)
 
 
 # ---------------------------------------------------------------------------

@@ -104,10 +104,21 @@ CREATE TABLE IF NOT EXISTS rag_documents (
     indexed_at   REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS nudges (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_name     TEXT NOT NULL,
+    skill        TEXT NOT NULL,
+    message      TEXT NOT NULL,
+    signals_json TEXT NOT NULL,
+    generated_at REAL NOT NULL,
+    dismissed    INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_commitments_time   ON commitments (start_ts, end_ts);
 CREATE INDEX IF NOT EXISTS idx_commitments_status ON commitments (status, start_ts);
 CREATE INDEX IF NOT EXISTS idx_turns_session      ON turns (session_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_conflicts_alert    ON conflicts (alerted, detected_at);
+CREATE INDEX IF NOT EXISTS idx_nudges_time        ON nudges (generated_at DESC, dismissed);
 """
 
 # Migration: add status column to existing databases that predate this field.
