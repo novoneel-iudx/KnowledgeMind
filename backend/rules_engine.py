@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import re
 
-from config import complete
+from pm_config import complete
 from models import Rule
 
 _EVAL_PROMPT = """

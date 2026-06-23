@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from config import complete
+from pm_config import complete
 from knowledge_graph import ProjectKG
 from models import (
     ChatMessage,

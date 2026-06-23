@@ -251,7 +251,9 @@
 <div id="toast"></div>
 
 <script>
-const API = '';  // same origin
+// When served as a sub-app inside KnowledgeMind at /projmgmt, detect the prefix.
+// When running standalone on its own port, this returns ''.
+const API = window.location.pathname.startsWith('/projmgmt') ? '/projmgmt' : '';
 let state = {
   projectId: null,
   projectName: null,
@@ -586,7 +588,7 @@ async function loadProject(pid, name) {
 async function createProject(formData) {
   setLoading(true, 'Initializing project — extracting KG and rules (may take ~30s)…');
   try {
-    const res = await fetch('/projects', { method: 'POST', body: formData });
+    const res = await fetch(API + '/projects', { method: 'POST', body: formData });
     if (!res.ok) throw new Error(await res.text());
     const result = await res.json();
     await loadProject(result.project_id, result.name);

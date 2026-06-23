@@ -5,7 +5,7 @@ import re
 
 from pypdf import PdfReader
 
-from config import complete
+from pm_config import complete
 from knowledge_graph import ProjectKG
 from models import KGEdge, KGNode, NodeSource, Rule
 

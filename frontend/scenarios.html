@@ -132,7 +132,9 @@
 </div>
 
 <script>
-const API = 'http://localhost:8000';
+// When served under KnowledgeMind at /projmgmt, use the sub-app prefix.
+// When running standalone, use '' (same origin).
+const API = window.location.pathname.startsWith('/projmgmt') ? '/projmgmt' : '';
 
 // ── Scenario data (mirrors tests/conversations.py) ────────────────────────────
 const SCENARIOS = {

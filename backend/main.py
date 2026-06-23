@@ -13,7 +13,7 @@ from knowledge_graph import ProjectKG
 from models import ChatMessage, Project, Rule, TeamMember
 from sow_ingestor import extract_pdf_text, ingest_sow
 
-import config as _config  # noqa: F401 — validates key and exits if missing
+import pm_config as _config  # noqa: F401 — validates key and exits if missing
 
 app = FastAPI(title="Project Advisor")
 
