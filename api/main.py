@@ -25,6 +25,7 @@ from __future__ import annotations
 import hmac
 import os
 import re
+import sys
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -396,6 +397,29 @@ def connectors() -> dict:
     from agent.tools import dispatch_tool
     names = ["strava", "apple_health", "todoist", "spotify"]
     return {"connectors": {name: dispatch_tool(name, {}) for name in names}}
+
+
+# ---------------------------------------------------------------------------
+# projmgmt addon — mount as ASGI sub-application at /projmgmt
+# ---------------------------------------------------------------------------
+# projmgmt's backend/ directory is added to sys.path only for the duration of
+# the import. The module name pm_config (not config) avoids colliding with KM's
+# own config/ package.
+
+_PM_BACKEND = Path(__file__).resolve().parent.parent.parent / "projmgmt" / "backend"
+
+if _PM_BACKEND.exists():
+    sys.path.insert(0, str(_PM_BACKEND))
+    try:
+        import main as _pm_main  # projmgmt/backend/main.py
+        app.mount("/projmgmt", _pm_main.app, name="projmgmt")
+        print("[KM] projmgmt addon mounted at /projmgmt")
+    except Exception as _pm_err:
+        print(f"[KM] projmgmt addon not loaded: {_pm_err}")
+    finally:
+        # Remove from path after import — all modules are cached in sys.modules
+        if str(_PM_BACKEND) in sys.path:
+            sys.path.remove(str(_PM_BACKEND))
 
 
 # ---------------------------------------------------------------------------
