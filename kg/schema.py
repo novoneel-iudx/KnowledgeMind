@@ -140,14 +140,50 @@ def init_db(path: str) -> sqlite3.Connection:
     return conn
 
 
+class _NoCloseConn:
+    """
+    Wrap a persistent in-memory connection so caller close() calls are no-ops.
+    In-memory SQLite databases are destroyed on close, so the shared singleton
+    must survive for the lifetime of the process.
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def close(self) -> None:  # callers own closing; keep the singleton alive
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+_in_memory_conn: Optional[sqlite3.Connection] = None
+
+
 def get_db_connection(path: str) -> sqlite3.Connection:
     """
     Return a ready-to-use connection with the schema guaranteed to exist.
 
-    Thin wrapper over init_db() so callers can use an intention-revealing name
-    when they just want a working connection. Callers own closing it.
+    Normally a thin wrapper over init_db(). When `path` is not writable (e.g. an
+    ephemeral / read-only cloud filesystem), falls back to a shared in-memory
+    SQLite database -- data survives the process lifetime but is lost on restart.
+    Callers own closing it (a no-op for the in-memory singleton).
     """
-    return init_db(path)
+    global _in_memory_conn
+    try:
+        return init_db(path)
+    except (OSError, sqlite3.OperationalError):
+        if _in_memory_conn is None:
+            print("[KG] WARNING: db_path not writable -- using in-memory SQLite "
+                  "(data resets on restart)")
+            conn = sqlite3.connect(":memory:", check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.executescript(SCHEMA_SQL)
+            conn.commit()
+            _in_memory_conn = conn
+        return _NoCloseConn(_in_memory_conn)  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -175,5 +211,16 @@ if __name__ == "__main__":
         missing = expected - set(table_names)
         assert not missing, f"Missing tables: {missing}"
         print(f"=> tables present: {', '.join(sorted(table_names))}")
+
+        # Fallback: a path whose parent is a regular file is never writable
+        # (deterministic across OSes/permissions) -> shared in-memory SQLite.
+        blocker = Path(tmp) / "blocker"
+        blocker.write_text("x")
+        fb = get_db_connection(str(blocker / "sub" / "fallback.db"))
+        fb.execute("INSERT INTO persons (name, created_at) VALUES ('x', 0)")
+        assert fb.execute("SELECT COUNT(*) FROM persons").fetchone()[0] >= 1
+        fb.close()  # no-op for the in-memory singleton
+        assert fb.execute("SELECT 1").fetchone()[0] == 1, "in-memory conn closed early"
+        print("=> unwritable path -> in-memory SQLite fallback (close() is a no-op)")
 
     print("All kg/schema.py smoke tests passed.")
