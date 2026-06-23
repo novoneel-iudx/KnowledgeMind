@@ -71,6 +71,26 @@ body {
 .nav-item.active { background: var(--accent-soft); color: var(--accent); }
 .nav-item.active .icon { color: var(--accent); }
 
+/* Tests dropdown group */
+.nav-group { display: flex; flex-direction: column; gap: 0; }
+.nav-group-toggle { justify-content: space-between; }
+.nav-group-toggle .nav-chevron {
+  width: 14px; height: 14px; flex: none; transition: transform .18s;
+  stroke: currentColor; stroke-width: 2.2; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.nav-group-toggle.open .nav-chevron { transform: rotate(180deg); }
+.nav-sub { display: flex; flex-direction: column; gap: 1px; margin-top: 1px; overflow: hidden; }
+.nav-sub-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px 7px 38px; border: none; background: transparent;
+  color: var(--text-muted); font: inherit; font-size: 13.5px; font-weight: 500;
+  border-radius: var(--radius-sm); cursor: pointer; text-align: left;
+  text-decoration: none; transition: background .12s, color .12s;
+}
+.nav-sub-item:hover { background: var(--surface-2); color: var(--text); }
+.nav-sub-item .icon { width: 15px; height: 15px; }
+
 .sidebar-foot { margin-top: auto; }
 .privacy-pill {
   display: flex; align-items: center; gap: 10px; padding: 11px 12px;
@@ -87,7 +107,8 @@ body {
 }
 .topbar h1 { margin: 0; font-size: 19px; font-weight: 680; letter-spacing: -.3px; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
-.content { padding: 26px 28px 56px; overflow-y: auto; }
+.content { flex: 1; padding: 26px 28px 56px; overflow-y: auto; min-height: 0; }
+.content--full { padding: 0; overflow: hidden; }
 .view { max-width: 920px; margin: 0 auto; }
 .hidden { display: none !important; }
 
